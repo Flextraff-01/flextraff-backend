@@ -152,19 +152,19 @@ class TrafficCalculator:
         """
         return [self.YELLOW_LIGHT_TIME] * 4
 
-    def get_full_cycle_breakdown(
-        self,
-        lane_counts: List[int],
-        junction_id: int = None
-    ) -> dict:
-        """
-        Get detailed breakdown of traffic light cycle including green and yellow phases
+    # def get_full_cycle_breakdown(
+    #     self,
+    #     lane_counts: List[int],
+    #     junction_id: int = None
+    # ) -> dict:
+    #     """
+    #     Get detailed breakdown of traffic light cycle including green and yellow phases
 
-        Returns:
-            dict: Complete cycle breakdown with green times, yellow times, and totals
-        """
-        # Will be implemented as async
-        raise NotImplementedError("Use async version: get_full_cycle_breakdown_async")
+    #     Returns:
+    #         dict: Complete cycle breakdown with green times, yellow times, and totals
+    #     """
+    #     # Will be implemented as async
+    #     raise NotImplementedError("Use async version: get_full_cycle_breakdown_async")
 
     async def get_full_cycle_breakdown_async(
         self,
