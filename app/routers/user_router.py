@@ -39,13 +39,12 @@ user_service = UserManagementService()
 # ============================================================================
 
 
-@router.post("/login", response_model=TokenResponse)
-async def login(request: Request, credentials: LoginRequest) -> TokenResponse:
+@router.post("/login")
+async def login(request: Request, credentials: LoginRequest):
     """
     Login with username and password
-    
-    Returns JWT access token and refresh token
     """
+
     try:
         user = await user_service.authenticate_user(
             credentials.username, credentials.password
@@ -58,6 +57,15 @@ async def login(request: Request, credentials: LoginRequest) -> TokenResponse:
                 detail="Invalid username or password",
             )
 
+        # NEW: Check if 2FA is enabled
+        if user.get("is_2fa_enabled"):
+            return {
+                "requires_2fa": True,
+                "username": user["username"],
+                "message": "Two-factor authentication required"
+            }
+
+        # Normal login (no 2FA)
         session = await user_service.create_session(
             user,
             ip_address=request.client.host if request.client else None,
@@ -65,6 +73,7 @@ async def login(request: Request, credentials: LoginRequest) -> TokenResponse:
         )
 
         return session
+
     except HTTPException:
         raise
     except Exception as e:
@@ -72,6 +81,69 @@ async def login(request: Request, credentials: LoginRequest) -> TokenResponse:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Login failed",
+        )
+
+@router.post("/login-2fa", response_model=TokenResponse)
+async def login_with_2fa(request: Request, username: str, code: str):
+    """
+    Complete login using OTP
+    """
+
+    try:
+        result = (
+            user_service.supabase
+            .table("users")
+            .select("*")
+            .eq("username", username)
+            .eq("is_active", True)
+            .execute()
+        )
+
+        if not result.data:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="User not found",
+            )
+
+        user = result.data[0]
+
+        if not user.get("is_2fa_enabled"):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="2FA not enabled for this user",
+            )
+
+        from app.services.two_factor.totp_service import TOTPService
+
+        secret = user.get("totp_secret")
+
+        if not secret:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="2FA secret missing",
+            )
+
+        if not TOTPService.verify_code(secret, code):
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid OTP code",
+            )
+
+        session = await user_service.create_session(
+            user,
+            ip_address=request.client.host if request.client else None,
+            user_agent=request.headers.get("user-agent"),
+        )
+
+        return session
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"2FA login error: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="2FA login failed",
         )
 
 

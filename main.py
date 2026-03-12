@@ -24,6 +24,8 @@ from pydantic import BaseModel, Field, field_validator
 from app.services.database_service import DatabaseService
 from app.services.traffic_calculator import TrafficCalculator
 
+from app.routers.two_factor_routes import router as two_factor_router
+
 # Setup logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -36,6 +38,7 @@ app = FastAPI(
     docs_url="/docs",
     redoc_url="/redoc",
 )
+app.include_router(two_factor_router)
 
 mqtt.init_app(app)
 
