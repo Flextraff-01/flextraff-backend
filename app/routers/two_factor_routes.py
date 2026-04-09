@@ -3,7 +3,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from app.services.two_factor.totp_service import TOTPService
 from app.services.two_factor.qr_service import QRService
 from app.services.custom_auth_service import CustomAuthService
-from app.dependencies.auth_dependency import get_current_user
+from app.middleware.access_control import get_current_user
 
 
 router = APIRouter(prefix="/auth/2fa", tags=["Two Factor"])

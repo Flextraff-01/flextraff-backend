@@ -22,7 +22,7 @@ class UserBase(BaseModel):
 class UserCreate(UserBase):
     """Model for creating a new user (admin only)"""
     password: str = Field(..., min_length=8)
-    role: str = Field(..., regex="^(ADMIN|OPERATOR|OBSERVER)$")
+    role: str = Field(..., pattern="^(ADMIN|OPERATOR|OBSERVER)$")
 
 
 class UserUpdate(BaseModel):
@@ -30,7 +30,7 @@ class UserUpdate(BaseModel):
     full_name: Optional[str] = Field(None, min_length=2, max_length=100)
     email: Optional[EmailStr] = None
     is_active: Optional[bool] = None
-    role: Optional[str] = Field(None, regex="^(ADMIN|OPERATOR|OBSERVER)$")
+    role: Optional[str] = Field(None, pattern="^(ADMIN|OPERATOR|OBSERVER)$")
 
 
 class UserResponse(UserBase):
@@ -101,12 +101,12 @@ class JunctionAccessCreate(BaseModel):
     """Model for granting user access to a junction"""
     user_id: int
     junction_id: int
-    access_level: str = Field(..., regex="^(OPERATOR|OBSERVER)$")
+    access_level: str = Field(..., pattern="^(OPERATOR|OBSERVER)$")
 
 
 class JunctionAccessUpdate(BaseModel):
     """Model for updating user access level"""
-    access_level: str = Field(..., regex="^(OPERATOR|OBSERVER)$")
+    access_level: str = Field(..., pattern="^(OPERATOR|OBSERVER)$")
 
 
 class JunctionAccessResponse(BaseModel):
@@ -158,7 +158,7 @@ class AdminBulkAccessGrant(BaseModel):
     """Model for granting access to multiple junctions"""
     user_id: int
     junction_ids: List[int]
-    access_level: str = Field(..., regex="^(OPERATOR|OBSERVER)$")
+    access_level: str = Field(..., pattern="^(OPERATOR|OBSERVER)$")
 
 
 class AdminBulkAccessRevoke(BaseModel):
