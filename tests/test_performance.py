@@ -15,6 +15,7 @@ import pytest
 from tests.conftest import TestData
 
 
+@pytest.mark.skip(reason="Requires running API server - use for manual testing only")
 @pytest.mark.performance
 @pytest.mark.slow
 @pytest.mark.api
@@ -141,6 +142,7 @@ class TestAPIPerformance:
         assert p95_time < 100, f"95th percentile too high: {p95_time:.2f}ms"
 
 
+@pytest.mark.skip(reason="Requires running API server - use for manual testing only")
 class TestAPILoadTesting:
     """Load testing for API endpoints"""
 
@@ -492,6 +494,7 @@ class TestAPILoadTesting:
         ), f"Overall success rate too low: {overall_success_rate:.1f}%"
 
 
+@pytest.mark.skip(reason="Requires running API server - use for manual testing only")
 class TestAPIStabilityTesting:
     """Stability and stress tests"""
 

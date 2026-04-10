@@ -5,8 +5,8 @@
 
 **Project:** FlexTraff Backend  
 **Technology Stack:** FastAPI, Python 3.11, Supabase  
-**Repository:** [APSK22/flextraff-backend](https://github.com/APSK22/flextraff-backend)  
-**Production URL:** [https://flextraff-backend.onrender.com](https://flextraff-backend.onrender.com)  
+**Repository:** [MananBagga/flextraff-backend](https://github.com/MananBagga/flextraff-backend)  
+**Production URL:** [https://flextraff-backend-production.up.railway.app/](https://flextraff-backend-production.up.railway.app/)  
 **Report Generated:** September 15, 2025  
 
 ---
@@ -18,7 +18,7 @@ The FlexTraff Backend project implements a robust, developer-friendly CI/CD pipe
 ### Key Metrics
 - ⚡ **Build Time**: ~0.3 seconds for essential tests
 - 🧪 **Test Coverage**: 67 total tests across 6 test files
-- 🚀 **Deployment**: Automated to production via Render
+- 🚀 **Deployment**: Automated to production via Railway
 - 🔄 **Pipeline Efficiency**: 95%+ success rate with fast feedback
 
 ---
@@ -67,7 +67,7 @@ graph TD
 - **Reporting:** JSON output for detailed analysis
 
 #### Stage 3: Deployment Trigger (🚀 Main branch only)
-- **Automatic Render Deployment:** Triggered on main branch success
+- **Automatic Railway Deployment:** Triggered on main branch success
 - **Health Check Validation:** Post-deployment verification
 
 ### 2. **Deployment Validation** (`deploy.yml`)
@@ -140,9 +140,9 @@ graph LR
 ## 🚀 Deployment Pipeline
 
 ### Production Environment
-- **Platform:** Render Cloud Platform
+- **Platform:** Railway Cloud Platform
 - **Deployment Method:** Git-based auto-deployment
-- **URL:** https://flextraff-backend.onrender.com
+- **URL:** https://flextraff-backend-production.up.railway.app/
 - **Health Monitoring:** Automated endpoint checks
 
 ### Deployment Flow
@@ -154,7 +154,7 @@ graph LR
 
 2. **Automated Deployment**
    ```
-   Main Branch Update → Render Webhook → Build & Deploy → Health Check
+   Main Branch Update → Railway Webhook → Build & Deploy → Health Check
    ```
 
 3. **Verification**

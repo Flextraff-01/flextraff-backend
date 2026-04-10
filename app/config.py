@@ -34,9 +34,9 @@ class Settings:
     # CORS Configuration
     CORS_ORIGINS: list = [
         "https://flextraff-admin-panel.vercel.app",
-        "http://localhost:3000",
-        "http://localhost:8001",
-        "http://localhost:8000",
+        # "http://localhost:3000",
+        # "http://localhost:8001",
+        # "http://localhost:8000",
     ]
 
     # MQTT Configuration

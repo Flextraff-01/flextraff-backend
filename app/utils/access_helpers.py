@@ -98,6 +98,9 @@ class JunctionAccessChecker:
 # Quick helper functions
 def check_access(user: dict, junction_id: int, required_role: Optional[str] = None) -> bool:
     """Quick access check"""
+    # ADMIN bypasses all role requirements
+    if user.get("role") == "ADMIN":
+        return True
     return JunctionAccessChecker.check_user_access(user, junction_id, required_role)
 
 

@@ -58,34 +58,51 @@ app.add_middleware(
 )
 
 # Global services
-db_service = None
-traffic_calculator = None
+_db_service = None
+_traffic_calculator = None
 
 
 @app.on_event("startup")
 async def startup_event():
     """Initialize services on startup"""
-    global db_service, traffic_calculator
+    global _db_service, _traffic_calculator
     logger.info("🚀 Starting FlexTraff ATCS API...")
 
     try:
         # Initialize database and calculator
-        db_service = DatabaseService()
-        await db_service.log_system_event(
-        message="FlexTraff backend started",
-        component="startup")
+        _db_service = DatabaseService()
+        await _db_service.log_system_event(
+            message="FlexTraff backend started successfully",
+            log_level="INFO",
+            component="startup"
+        )
 
-        traffic_calculator = TrafficCalculator(db_service=db_service)
+        _traffic_calculator = TrafficCalculator(db_service=_db_service)
 
         # Test database connection
-        health = await db_service.health_check()
+        health = await _db_service.health_check()
         if health["database_connected"]:
             logger.info("✅ Database connection established")
         else:
             logger.error(f"❌ Database connection failed: {health.get('error')}")
+            await _db_service.log_system_error(
+                error_message=f"Database connection failed: {health.get('error')}",
+                error_type="STARTUP_DB_ERROR",
+                component="startup"
+            )
 
     except Exception as e:
         logger.error(f"❌ Startup failed: {str(e)}")
+        try:
+            # Try to log the error if _db_service was initialized
+            if _db_service:
+                await _db_service.log_system_error(
+                    error_message=str(e),
+                    error_type="STARTUP_FAILURE",
+                    component="startup"
+                )
+        except:
+            pass  # If logging fails, don't crash startup
         raise
 
     # Wait for MQTT to connect
@@ -102,24 +119,55 @@ async def startup_event():
         print("✅ MQTT subscription confirmed")
         print("🎧 Ready to receive car count data from Raspberry Pi")
         print("=" * 60 + "\n")
+        
+        await _db_service.log_system_event(
+            message="MQTT subscription active and listening for car count data",
+            log_level="INFO",
+            component="mqtt_startup"
+        )
     except Exception as e:
         print(f"⚠️ MQTT subscription warning: {e}")
+        try:
+            await _db_service.log_system_error(
+                error_message=f"MQTT subscription failed: {str(e)}",
+                error_type="MQTT_SUBSCRIPTION_ERROR",
+                component="mqtt_startup"
+            )
+        except:
+            pass  # If logging fails, don't crash startup
+
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    """Handle graceful shutdown and log system closure"""
+    # global _db_service
+    logger.info("🛑 FlexTraff ATCS API shutting down...")
+    
+    try:
+        if _db_service:
+            await _db_service.log_system_event(
+                message="FlexTraff backend shutdown gracefully",
+                log_level="INFO",
+                component="shutdown"
+            )
+    except Exception as e:
+        logger.error(f"⚠️ Warning during shutdown logging: {e}")
 
 
 # Dependency to get database service
 async def get_db_service() -> DatabaseService:
-    if db_service is None:
+    if _db_service is None:
         raise HTTPException(status_code=500, detail="Database service not initialized")
-    return db_service
+    return _db_service
 
 
 # Dependency to get traffic calculator
 async def get_traffic_calculator() -> TrafficCalculator:
-    if traffic_calculator is None:
+    if _traffic_calculator is None:
         raise HTTPException(
             status_code=500, detail="Traffic calculator not initialized"
         )
-    return traffic_calculator
+    return _traffic_calculator
 
 
 # Pydantic models for API requests/responses
@@ -366,10 +414,12 @@ async def get_live_timing(
         return {
             "junction_id": junction_id,
             "current_lane_counts": lane_counts,
-            "recommended_green_times": green_times,
+            "recommended_green_times": green_times, #Probably not needed
             "total_cycle_time": cycle_time,
-            "time_window_minutes": time_window,
+            "time_window_minutes": time_window, #Probably not needed
             "algorithm_info": calculator.get_algorithm_info(),
+
+            # Need green times later for frontend visual Integration of all lanes with green and red times
         }
 
     except Exception as e:
@@ -379,7 +429,7 @@ async def get_live_timing(
         )
 
 
-@app.get("/junction/{junction_id}/history")
+@app.get("/junction/{junction_id}/history") #The return values and the values to be inserted in the db seems incorrect
 async def get_junction_history(
     junction_id: int, limit: int = 10, db: DatabaseService = Depends(get_db_service)
 ):
