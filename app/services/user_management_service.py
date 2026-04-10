@@ -240,20 +240,12 @@ class UserManagementService:
     # AUTHENTICATION
     # =========================================================================
 
-    async def authenticate_user(
-        self, username: str, password: str
-    ) -> Optional[Dict[str, Any]]:
-        """
-        Authenticate user with username and password
-        
-        Args:
-            username: User's username
-            password: User's password
-            
-        Returns:
-            Dict with user data if successful, None otherwise
-        """
+    async def authenticate_user(self, username: str, password: str):
         try:
+            print("\n=== LOGIN DEBUG START ===")
+            print("Entered Username:", username)
+            print("Entered Password:", password)
+
             result = (
                 self.supabase
                 .table("users")
@@ -263,17 +255,25 @@ class UserManagementService:
                 .execute()
             )
 
+            print("DB RESULT:", result.data)
+
             if not result.data:
-                self.logger.warning(f"User not found: {username}")
+                print("❌ USER NOT FOUND")
                 return None
 
             user = result.data[0]
 
-            if not self.verify_password(password, user["password_hash"]):
-                self.logger.warning(f"Invalid password for user: {username}")
+            print("Stored Hash:", user["password_hash"])
+
+            verify = self.verify_password(password, user["password_hash"])
+            print("Password Verify Result:", verify)
+
+            if not verify:
+                print("❌ PASSWORD MISMATCH")
                 return None
 
-            # Update last login
+            print("✅ LOGIN SUCCESS")
+
             self.supabase.table("users").update(
                 {"last_login": datetime.utcnow().isoformat()}
             ).eq("id", user["id"]).execute()
@@ -281,7 +281,7 @@ class UserManagementService:
             return user
 
         except Exception as e:
-            self.logger.error(f"Authentication error: {str(e)}")
+            print("❌ ERROR:", str(e))
             return None
 
     # =========================================================================

@@ -48,7 +48,7 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=[
         "https://flextraff-admin-panel.vercel.app/logs",  # React development
-        "http://localhost:8001",  # Local testing
+        "http://localhost:3000",  # Local testing
         "https://your-frontend-domain.com",  # Production frontend
         # Add your Render URL here once deployed
     ],
