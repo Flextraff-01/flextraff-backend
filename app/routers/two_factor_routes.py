@@ -8,7 +8,15 @@ from app.middleware.access_control import get_current_user
 
 router = APIRouter(prefix="/auth/2fa", tags=["Two Factor"])
 
-auth_service = CustomAuthService()
+# Lazy initialization of auth_service
+_auth_service = None
+
+def get_auth_service() -> CustomAuthService:
+    """Get or initialize the auth service singleton"""
+    global _auth_service
+    if _auth_service is None:
+        _auth_service = CustomAuthService()
+    return _auth_service
 
 
 # =========================================================
@@ -42,6 +50,7 @@ async def setup_two_factor(current_user=Depends(get_current_user)):
     qr_code = QRService.generate_qr_base64(uri)
 
     # Save temporary secret
+    auth_service = get_auth_service()
     auth_service.supabase.table("users").update({
         "totp_secret_temp": secret
     }).eq("id", user_id).execute()
@@ -83,6 +92,7 @@ async def verify_two_factor(
         )
 
     # Enable 2FA
+    auth_service = get_auth_service()
     auth_service.supabase.table("users").update({
         "totp_secret": temp_secret,
         "totp_secret_temp": None,
@@ -104,6 +114,7 @@ async def login_with_2fa(username: str, code: str):
     Complete login using OTP
     """
 
+    auth_service = get_auth_service()
     result = (
         auth_service.supabase
         .table("users")
@@ -142,6 +153,7 @@ async def login_with_2fa(username: str, code: str):
         )
 
     # Create session
+    auth_service = get_auth_service()
     session = await auth_service.create_session(user)
 
     return session
@@ -176,6 +188,7 @@ async def disable_two_factor(
             detail="Invalid OTP"
         )
 
+    auth_service = get_auth_service()
     auth_service.supabase.table("users").update({
         "totp_secret": None,
         "totp_secret_temp": None,

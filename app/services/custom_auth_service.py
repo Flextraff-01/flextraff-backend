@@ -31,21 +31,25 @@ class CustomAuthService:
         self.supabase_url = os.getenv("SUPABASE_URL")
         self.supabase_service_key = os.getenv("SUPABASE_SERVICE_KEY")
         self.secret_key = os.getenv("JWT_SECRET_KEY")
-
-        if not self.supabase_url or not self.supabase_service_key:
-            raise ValueError("SUPABASE_URL or SUPABASE_SERVICE_KEY not set")
-
-        if not self.secret_key:
-            raise ValueError("JWT_SECRET_KEY not set")
-
-        self.supabase: Client = create_client(
-            self.supabase_url,
-            self.supabase_service_key,
-        )
-
-        self.db_service = DatabaseService()
-        self.pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+        
+        # Determine if we're in mock mode (missing credentials)
+        self.mock_mode = not (self.supabase_url and self.supabase_service_key and self.secret_key)
+        
         self.logger = logging.getLogger("CustomAuthService")
+        
+        # Only initialize Supabase and database if credentials are available
+        if not self.mock_mode:
+            self.supabase: Client = create_client(
+                self.supabase_url,
+                self.supabase_service_key,
+            )
+            self.db_service = DatabaseService()
+        else:
+            self.supabase = None
+            self.db_service = None
+            self.logger.warning("CustomAuthService initialized in mock mode (Supabase credentials not configured)")
+
+        self.pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
         # JWT settings
         self.algorithm = "HS256"
