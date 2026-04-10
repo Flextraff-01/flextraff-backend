@@ -29,17 +29,38 @@ class UserManagementService:
     """
 
     def __init__(self):
-        self.supabase: Client = create_client(
-            settings.SUPABASE_URL, settings.SUPABASE_SERVICE_KEY
-        )
-        self.pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
         self.logger = logging.getLogger(__name__)
+        self.mock_mode = not (
+            settings.SUPABASE_URL and settings.SUPABASE_SERVICE_KEY
+        )
+        self.supabase: Optional[Client] = None
+
+        if not self.mock_mode:
+            self.supabase = create_client(
+                settings.SUPABASE_URL, settings.SUPABASE_SERVICE_KEY
+            )
+        else:
+            self.logger.warning(
+                "UserManagementService initialized in mock mode "
+                "(Supabase credentials not configured)"
+            )
+
+        self.pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
         # JWT Settings
         self.secret_key = settings.JWT_SECRET_KEY
         self.algorithm = "HS256"
         self.access_token_expire_minutes = 30
         self.refresh_token_expire_days = 7
+
+    def _get_supabase(self) -> Client:
+        """Return the initialized Supabase client or raise a clear error."""
+        if self.supabase is None:
+            raise RuntimeError(
+                "User management service is running in mock mode because "
+                "Supabase credentials are not configured"
+            )
+        return self.supabase
 
     # =========================================================================
     # PASSWORD HANDLING (ADMIN CONTROLLED)
@@ -61,7 +82,7 @@ class UserManagementService:
         """Get all junctions a user has access to"""
         try:
             result = (
-                self.supabase
+                self._get_supabase()
                 .table("user_junctions")
                 .select("junction_id")
                 .eq("user_id", user_id)
@@ -76,7 +97,7 @@ class UserManagementService:
         """Get specific junction access record for a user"""
         try:
             result = (
-                self.supabase
+                self._get_supabase()
                 .table("user_junctions")
                 .select("*")
                 .eq("user_id", user_id)
@@ -115,7 +136,7 @@ class UserManagementService:
             
             if existing:
                 # Update existing access
-                self.supabase.table("user_junctions").update(
+                self._get_supabase().table("user_junctions").update(
                     {"access_level": access_level}
                 ).eq("user_id", user_id).eq("junction_id", junction_id).execute()
                 self.logger.info(
@@ -129,7 +150,7 @@ class UserManagementService:
                     "access_level": access_level,
                     "granted_by": granted_by_user_id,
                 }
-                self.supabase.table("user_junctions").insert(access_data).execute()
+                self._get_supabase().table("user_junctions").insert(access_data).execute()
                 self.logger.info(
                     f"Granted junction access for user {user_id} to junction {junction_id}: {access_level}"
                 )
@@ -166,7 +187,7 @@ class UserManagementService:
             bool: True if successful
         """
         try:
-            self.supabase.table("user_junctions").delete().eq(
+            self._get_supabase().table("user_junctions").delete().eq(
                 "user_id", user_id
             ).eq("junction_id", junction_id).execute()
             
@@ -247,7 +268,7 @@ class UserManagementService:
             print("Entered Password:", password)
 
             result = (
-                self.supabase
+                self._get_supabase()
                 .table("users")
                 .select("*")
                 .eq("username", username)
@@ -274,7 +295,7 @@ class UserManagementService:
 
             print("✅ LOGIN SUCCESS")
 
-            self.supabase.table("users").update(
+            self._get_supabase().table("users").update(
                 {"last_login": datetime.utcnow().isoformat()}
             ).eq("id", user["id"]).execute()
 
@@ -349,7 +370,7 @@ class UserManagementService:
                 "user_agent": user_agent,
             }
 
-            self.supabase.table("user_sessions").insert(session_data).execute()
+            self._get_supabase().table("user_sessions").insert(session_data).execute()
 
             # Log audit
             await self.log_audit(
@@ -392,7 +413,7 @@ class UserManagementService:
                 return None
 
             result = (
-                self.supabase
+                self._get_supabase()
                 .table("users")
                 .select("*")
                 .eq("id", int(user_id))
@@ -432,7 +453,7 @@ class UserManagementService:
             user_id = payload.get("sub")
 
             session = (
-                self.supabase
+                self._get_supabase()
                 .table("user_sessions")
                 .select("*")
                 .eq("refresh_token", refresh_token)
@@ -445,7 +466,7 @@ class UserManagementService:
                 return None
 
             user = (
-                self.supabase
+                self._get_supabase()
                 .table("users")
                 .select("*")
                 .eq("id", int(user_id))
@@ -455,7 +476,7 @@ class UserManagementService:
 
             new_access_token = self.create_access_token(user)
 
-            self.supabase.table("user_sessions").update(
+            self._get_supabase().table("user_sessions").update(
                 {"last_used": datetime.utcnow().isoformat()}
             ).eq("refresh_token", refresh_token).execute()
 
@@ -475,7 +496,7 @@ class UserManagementService:
     async def logout(self, session_token: str, user_id: int) -> bool:
         """Logout user and invalidate session"""
         try:
-            self.supabase.table("user_sessions").delete().eq(
+            self._get_supabase().table("user_sessions").delete().eq(
                 "session_token", session_token
             ).execute()
 
@@ -531,7 +552,7 @@ class UserManagementService:
         }
 
         try:
-            result = self.supabase.table("users").insert(user_data).execute()
+            result = self._get_supabase().table("users").insert(user_data).execute()
 
             if not result.data:
                 return None
@@ -568,7 +589,7 @@ class UserManagementService:
             if not update_data:
                 return None
 
-            result = self.supabase.table("users").update(update_data).eq(
+            result = self._get_supabase().table("users").update(update_data).eq(
                 "id", user_id
             ).execute()
 
@@ -587,7 +608,7 @@ class UserManagementService:
         """Change user password (admin only)"""
         try:
             password_hash = self.hash_password(new_password)
-            self.supabase.table("users").update(
+            self._get_supabase().table("users").update(
                 {"password_hash": password_hash}
             ).eq("id", user_id).execute()
 
@@ -600,7 +621,7 @@ class UserManagementService:
     async def deactivate_user(self, user_id: int) -> bool:
         """Deactivate a user account"""
         try:
-            self.supabase.table("users").update(
+            self._get_supabase().table("users").update(
                 {"is_active": False}
             ).eq("id", user_id).execute()
 
@@ -614,7 +635,7 @@ class UserManagementService:
         """Get user by ID"""
         try:
             result = (
-                self.supabase
+                self._get_supabase()
                 .table("users")
                 .select("*")
                 .eq("id", user_id)
@@ -637,7 +658,7 @@ class UserManagementService:
         """List all users with pagination"""
         try:
             # Get total count
-            count_result = self.supabase.table("users").select(
+            count_result = self._get_supabase().table("users").select(
                 "id", count="exact"
             ).execute()
 
@@ -645,7 +666,7 @@ class UserManagementService:
 
             # Get paginated results
             result = (
-                self.supabase
+                self._get_supabase()
                 .table("users")
                 .select("*")
                 .order("created_at", desc=True)
@@ -687,7 +708,7 @@ class UserManagementService:
                 "ip_address": ip_address,
             }
 
-            self.supabase.table("user_audit_logs").insert(audit_data).execute()
+            self._get_supabase().table("user_audit_logs").insert(audit_data).execute()
             return True
         except Exception as e:
             self.logger.error(f"Error logging audit: {str(e)}")

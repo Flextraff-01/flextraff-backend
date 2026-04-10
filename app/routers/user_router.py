@@ -28,8 +28,8 @@ from app.services.user_management_service import UserManagementService
 router = APIRouter(prefix="/api/v1/users", tags=["users"])
 logger = logging.getLogger(__name__)
 
-# Initialize service
-user_service = UserManagementService()
+def get_user_service():
+    return UserManagementService()
 
 
 # ============================================================================
@@ -38,7 +38,11 @@ user_service = UserManagementService()
 
 
 @router.post("/login")
-async def login(request: Request, credentials: LoginRequest):
+async def login(
+    request: Request,
+    credentials: LoginRequest,
+    user_service: UserManagementService = Depends(get_user_service)
+):
     """
     Login with username and password
     """
@@ -84,7 +88,10 @@ async def login(request: Request, credentials: LoginRequest):
 
 
 @router.post("/refresh-token")
-async def refresh_token(data: TokenRefreshRequest) -> dict:
+async def refresh_token(
+    data: TokenRefreshRequest,
+    user_service: UserManagementService = Depends(get_user_service),
+) -> dict:
     """
     Refresh access token using refresh token
     """
@@ -111,7 +118,11 @@ async def refresh_token(data: TokenRefreshRequest) -> dict:
 
 
 @router.post("/logout")
-async def logout(request: Request, user: dict = Depends(get_current_user)) -> dict:
+async def logout(
+    request: Request,
+    user: dict = Depends(get_current_user),
+    user_service: UserManagementService = Depends(get_user_service),
+) -> dict:
     """
     Logout user and invalidate session
     """
@@ -138,7 +149,10 @@ async def logout(request: Request, user: dict = Depends(get_current_user)) -> di
 
 
 @router.get("/me", response_model=UserDetailedResponse)
-async def get_current_user_profile(user: dict = Depends(get_current_user)) -> dict:
+async def get_current_user_profile(
+    user: dict = Depends(get_current_user),
+    user_service: UserManagementService = Depends(get_user_service),
+) -> dict:
     """Get current user's profile with junction access info"""
 
     try:
@@ -172,6 +186,7 @@ async def get_current_user_profile(user: dict = Depends(get_current_user)) -> di
 async def create_user(
     user_data: UserCreate,
     admin: dict = Depends(require_admin),
+    user_service: UserManagementService = Depends(get_user_service),
 ) -> dict:
     """
     Create a new user (admin only)
@@ -216,6 +231,7 @@ async def list_users(
     limit: int = Query(10, ge=1, le=100),
     offset: int = Query(0, ge=0),
     admin: dict = Depends(require_admin),
+    user_service: UserManagementService = Depends(get_user_service),
 ) -> dict:
 
     try:
@@ -240,6 +256,7 @@ async def list_users(
 async def get_user(
     user_id: int,
     admin: dict = Depends(require_admin),
+    user_service: UserManagementService = Depends(get_user_service),
 ) -> dict:
 
     try:
@@ -271,6 +288,7 @@ async def update_user(
     user_id: int,
     user_update: UserUpdate,
     admin: dict = Depends(require_admin),
+    user_service: UserManagementService = Depends(get_user_service),
 ) -> dict:
 
     try:
@@ -312,6 +330,7 @@ async def change_password(
     user_id: int,
     password_data: ChangePasswordRequest,
     admin: dict = Depends(require_admin),
+    user_service: UserManagementService = Depends(get_user_service),
 ) -> dict:
 
     try:
