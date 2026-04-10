@@ -12,13 +12,10 @@ from app.middleware.access_control import get_current_user, require_admin
 from app.models.user_models import (
     AdminBulkAccessGrant,
     AdminBulkAccessRevoke,
-    AuditLogResponse,
     ChangePasswordRequest,
     JunctionAccessCreate,
-    JunctionAccessResponse,
     LoginRequest,
     TokenRefreshRequest,
-    TokenResponse,
     UserCreate,
     UserDetailedResponse,
     UserListResponse,
@@ -27,11 +24,12 @@ from app.models.user_models import (
 )
 from app.services.user_management_service import UserManagementService
 
+
 router = APIRouter(prefix="/api/v1/users", tags=["users"])
 logger = logging.getLogger(__name__)
 
-# Initialize service
-user_service = UserManagementService()
+def get_user_service():
+    return UserManagementService()
 
 
 # ============================================================================
@@ -39,16 +37,20 @@ user_service = UserManagementService()
 # ============================================================================
 
 
-@router.post("/login", response_model=TokenResponse)
-async def login(request: Request, credentials: LoginRequest) -> TokenResponse:
+@router.post("/login")
+async def login(
+    request: Request,
+    credentials: LoginRequest,
+    user_service: UserManagementService = Depends(get_user_service)
+):
     """
     Login with username and password
-    
-    Returns JWT access token and refresh token
     """
+
     try:
         user = await user_service.authenticate_user(
-            credentials.username, credentials.password
+            credentials.username,
+            credentials.password
         )
 
         if not user:
@@ -58,6 +60,15 @@ async def login(request: Request, credentials: LoginRequest) -> TokenResponse:
                 detail="Invalid username or password",
             )
 
+        # If 2FA enabled → frontend must call /auth/2fa/login
+        if user.get("is_2fa_enabled"):
+            return {
+                "requires_2fa": True,
+                "username": user["username"],
+                "message": "Two-factor authentication required"
+            }
+
+        # Normal login (no 2FA)
         session = await user_service.create_session(
             user,
             ip_address=request.client.host if request.client else None,
@@ -65,6 +76,7 @@ async def login(request: Request, credentials: LoginRequest) -> TokenResponse:
         )
 
         return session
+
     except HTTPException:
         raise
     except Exception as e:
@@ -75,11 +87,15 @@ async def login(request: Request, credentials: LoginRequest) -> TokenResponse:
         )
 
 
-@router.post("/refresh-token", response_model=dict)
-async def refresh_token(data: TokenRefreshRequest) -> dict:
+@router.post("/refresh-token")
+async def refresh_token(
+    data: TokenRefreshRequest,
+    user_service: UserManagementService = Depends(get_user_service),
+) -> dict:
     """
     Refresh access token using refresh token
     """
+
     try:
         result = await user_service.refresh_access_token(data.refresh_token)
 
@@ -90,6 +106,7 @@ async def refresh_token(data: TokenRefreshRequest) -> dict:
             )
 
         return result
+
     except HTTPException:
         raise
     except Exception as e:
@@ -101,16 +118,23 @@ async def refresh_token(data: TokenRefreshRequest) -> dict:
 
 
 @router.post("/logout")
-async def logout(request: Request, user: dict = Depends(get_current_user)) -> dict:
+async def logout(
+    request: Request,
+    user: dict = Depends(get_current_user),
+    user_service: UserManagementService = Depends(get_user_service),
+) -> dict:
     """
     Logout user and invalidate session
     """
+
     try:
         session_token = request.headers.get("X-Session-Token")
+
         if session_token:
             await user_service.logout(session_token, user["id"])
 
         return {"message": "Successfully logged out"}
+
     except Exception as e:
         logger.error(f"Logout error: {str(e)}")
         raise HTTPException(
@@ -125,8 +149,12 @@ async def logout(request: Request, user: dict = Depends(get_current_user)) -> di
 
 
 @router.get("/me", response_model=UserDetailedResponse)
-async def get_current_user_profile(user: dict = Depends(get_current_user)) -> dict:
+async def get_current_user_profile(
+    user: dict = Depends(get_current_user),
+    user_service: UserManagementService = Depends(get_user_service),
+) -> dict:
     """Get current user's profile with junction access info"""
+
     try:
         user_data = await user_service.get_user_by_id(user["id"])
 
@@ -140,6 +168,7 @@ async def get_current_user_profile(user: dict = Depends(get_current_user)) -> di
         user_data["junctions"] = [{"junction_id": j} for j in junctions]
 
         return user_data
+
     except Exception as e:
         logger.error(f"Error fetching user profile: {str(e)}")
         raise HTTPException(
@@ -157,12 +186,12 @@ async def get_current_user_profile(user: dict = Depends(get_current_user)) -> di
 async def create_user(
     user_data: UserCreate,
     admin: dict = Depends(require_admin),
+    user_service: UserManagementService = Depends(get_user_service),
 ) -> dict:
     """
     Create a new user (admin only)
-    
-    Users cannot register themselves. Only admins can create users.
     """
+
     try:
         user = await user_service.create_user(
             username=user_data.username,
@@ -178,7 +207,6 @@ async def create_user(
                 detail="Failed to create user",
             )
 
-        # Log audit
         await user_service.log_audit(
             user_id=admin["id"],
             action="CREATE_USER",
@@ -187,6 +215,7 @@ async def create_user(
         )
 
         return user
+
     except HTTPException:
         raise
     except Exception as e:
@@ -202,10 +231,9 @@ async def list_users(
     limit: int = Query(10, ge=1, le=100),
     offset: int = Query(0, ge=0),
     admin: dict = Depends(require_admin),
+    user_service: UserManagementService = Depends(get_user_service),
 ) -> dict:
-    """
-    List all users (admin only)
-    """
+
     try:
         users, total = await user_service.list_users(limit=limit, offset=offset)
 
@@ -215,6 +243,7 @@ async def list_users(
             "page": offset // limit + 1,
             "page_size": limit,
         }
+
     except Exception as e:
         logger.error(f"Error listing users: {str(e)}")
         raise HTTPException(
@@ -227,10 +256,9 @@ async def list_users(
 async def get_user(
     user_id: int,
     admin: dict = Depends(require_admin),
+    user_service: UserManagementService = Depends(get_user_service),
 ) -> dict:
-    """
-    Get user details with junction access (admin only)
-    """
+
     try:
         user = await user_service.get_user_by_id(user_id)
 
@@ -244,6 +272,7 @@ async def get_user(
         user["junctions"] = [{"junction_id": j} for j in junctions]
 
         return user
+
     except HTTPException:
         raise
     except Exception as e:
@@ -259,10 +288,9 @@ async def update_user(
     user_id: int,
     user_update: UserUpdate,
     admin: dict = Depends(require_admin),
+    user_service: UserManagementService = Depends(get_user_service),
 ) -> dict:
-    """
-    Update user details (admin only)
-    """
+
     try:
         user = await user_service.update_user(
             user_id=user_id,
@@ -278,7 +306,6 @@ async def update_user(
                 detail="User not found",
             )
 
-        # Log audit
         await user_service.log_audit(
             user_id=admin["id"],
             action="UPDATE_USER",
@@ -287,6 +314,7 @@ async def update_user(
         )
 
         return user
+
     except HTTPException:
         raise
     except Exception as e:
@@ -302,13 +330,13 @@ async def change_password(
     user_id: int,
     password_data: ChangePasswordRequest,
     admin: dict = Depends(require_admin),
+    user_service: UserManagementService = Depends(get_user_service),
 ) -> dict:
-    """
-    Change user password (admin only)
-    """
+
     try:
         success = await user_service.change_password(
-            user_id, password_data.new_password
+            user_id,
+            password_data.new_password
         )
 
         if not success:
@@ -317,7 +345,6 @@ async def change_password(
                 detail="User not found",
             )
 
-        # Log audit
         await user_service.log_audit(
             user_id=admin["id"],
             action="CHANGE_PASSWORD",
@@ -325,6 +352,7 @@ async def change_password(
         )
 
         return {"message": "Password changed successfully"}
+
     except HTTPException:
         raise
     except Exception as e:
@@ -332,206 +360,4 @@ async def change_password(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to change password",
-        )
-
-
-@router.post("/{user_id}/deactivate")
-async def deactivate_user(
-    user_id: int,
-    admin: dict = Depends(require_admin),
-) -> dict:
-    """
-    Deactivate a user account (admin only)
-    """
-    try:
-        success = await user_service.deactivate_user(user_id)
-
-        if not success:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="User not found",
-            )
-
-        # Log audit
-        await user_service.log_audit(
-            user_id=admin["id"],
-            action="DEACTIVATE_USER",
-            resource=f"user_{user_id}",
-        )
-
-        return {"message": "User deactivated successfully"}
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Error deactivating user: {str(e)}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to deactivate user",
-        )
-
-
-# ============================================================================
-# JUNCTION ACCESS MANAGEMENT ENDPOINTS
-# ============================================================================
-
-
-@router.get("/{user_id}/junctions")
-async def get_user_junctions(
-    user_id: int,
-    admin: dict = Depends(require_admin),
-) -> dict:
-    """
-    Get all junctions a user has access to (admin only)
-    """
-    try:
-        junctions = user_service.get_user_junctions(user_id)
-
-        return {
-            "user_id": user_id,
-            "junction_ids": junctions,
-            "count": len(junctions),
-        }
-    except Exception as e:
-        logger.error(f"Error fetching user junctions: {str(e)}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to fetch user junctions",
-        )
-
-
-@router.post("/{user_id}/junctions/{junction_id}/grant-access")
-async def grant_junction_access(
-    user_id: int,
-    junction_id: int,
-    access_data: JunctionAccessCreate,
-    admin: dict = Depends(require_admin),
-) -> dict:
-    """
-    Grant a user access to a junction (admin only)
-    
-    Access levels:
-    - OPERATOR: Can view and control the junction
-    - OBSERVER: Can view the junction only
-    """
-    try:
-        success = await user_service.grant_junction_access(
-            user_id=user_id,
-            junction_id=junction_id,
-            access_level=access_data.access_level,
-            granted_by_user_id=admin["id"],
-        )
-
-        if not success:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Failed to grant junction access",
-            )
-
-        return {
-            "message": f"Access granted to user {user_id} for junction {junction_id}",
-            "access_level": access_data.access_level,
-        }
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Error granting junction access: {str(e)}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to grant junction access",
-        )
-
-
-@router.post("/{user_id}/junctions/{junction_id}/revoke-access")
-async def revoke_junction_access(
-    user_id: int,
-    junction_id: int,
-    admin: dict = Depends(require_admin),
-) -> dict:
-    """
-    Revoke a user's access to a junction (admin only)
-    """
-    try:
-        success = await user_service.revoke_junction_access(
-            user_id=user_id,
-            junction_id=junction_id,
-            revoked_by_user_id=admin["id"],
-        )
-
-        if not success:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="User access not found",
-            )
-
-        return {
-            "message": f"Access revoked for user {user_id} from junction {junction_id}",
-        }
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Error revoking junction access: {str(e)}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to revoke junction access",
-        )
-
-
-@router.post("/{user_id}/junctions/bulk-grant")
-async def bulk_grant_access(
-    user_id: int,
-    bulk_grant: AdminBulkAccessGrant,
-    admin: dict = Depends(require_admin),
-) -> dict:
-    """
-    Grant a user access to multiple junctions at once (admin only)
-    """
-    try:
-        successful, failed = await user_service.bulk_grant_access(
-            user_id=user_id,
-            junction_ids=bulk_grant.junction_ids,
-            access_level=bulk_grant.access_level,
-            granted_by_user_id=admin["id"],
-        )
-
-        return {
-            "message": "Bulk grant operation completed",
-            "successful": successful,
-            "failed": failed,
-            "total": len(bulk_grant.junction_ids),
-        }
-    except Exception as e:
-        logger.error(f"Error in bulk grant: {str(e)}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Bulk grant operation failed",
-        )
-
-
-@router.post("/{user_id}/junctions/bulk-revoke")
-async def bulk_revoke_access(
-    user_id: int,
-    bulk_revoke: AdminBulkAccessRevoke,
-    admin: dict = Depends(require_admin),
-) -> dict:
-    """
-    Revoke a user's access to multiple junctions at once (admin only)
-    """
-    try:
-        successful, failed = await user_service.bulk_revoke_access(
-            user_id=user_id,
-            junction_ids=bulk_revoke.junction_ids,
-            revoked_by_user_id=admin["id"],
-        )
-
-        return {
-            "message": "Bulk revoke operation completed",
-            "successful": successful,
-            "failed": failed,
-            "total": len(bulk_revoke.junction_ids),
-        }
-    except Exception as e:
-        logger.error(f"Error in bulk revoke: {str(e)}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Bulk revoke operation failed",
         )

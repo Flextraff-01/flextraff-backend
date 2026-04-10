@@ -24,6 +24,9 @@ from pydantic import BaseModel, Field, field_validator
 from app.services.database_service import DatabaseService
 from app.services.traffic_calculator import TrafficCalculator
 
+from app.routers.two_factor_routes import router as two_factor_router
+from app.routers.user_router import router as user_router
+
 # Setup logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -36,7 +39,8 @@ app = FastAPI(
     docs_url="/docs",
     redoc_url="/redoc",
 )
-
+app.include_router(two_factor_router)
+app.include_router(user_router)
 mqtt.init_app(app)
 
 # CORS middleware for frontend integration
@@ -44,7 +48,9 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=[
         "https://flextraff-admin-panel.vercel.app/logs",  # React development
-        "http://localhost:8001",  # Local testing
+        "http://localhost:3000",  # Local testing
+        "https://your-frontend-domain.com",  # Production frontend
+        # Add your Render URL here once deployed
     ],
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "DELETE"],
