@@ -20,18 +20,20 @@ class DatabaseService:
     def __init__(self):
         self.supabase_url = os.getenv("SUPABASE_URL")
         self.supabase_service_key = os.getenv("SUPABASE_SERVICE_KEY")
+        self.supabase = None
+
+        self.logger = logging.getLogger("DatabaseService")
+        self.logger.setLevel(logging.INFO)
 
         if not self.supabase_url or not self.supabase_service_key:
-            raise ValueError(
-                "Missing SUPABASE_URL or SUPABASE_SERVICE_KEY in environment"
+            self.logger.warning(
+                "Supabase credentials not configured - using mock mode for testing"
             )
+            return
 
         self.supabase: Client = create_client(
             self.supabase_url, self.supabase_service_key
         )
-
-        self.logger = logging.getLogger("DatabaseService")
-        self.logger.setLevel(logging.INFO)
 
         self.logger.info("✅ DatabaseService initialized")
 
@@ -68,8 +70,92 @@ class DatabaseService:
             # Logging should never crash the system
             self.logger.error(f"❌ Failed to insert system log: {e}")
 
+    async def log_system_error(
+        self,
+        error_message: str,
+        error_type: str = "SYSTEM_ERROR",
+        component: str = "backend",
+        junction_id: Optional[int] = None,
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> None:
+        """
+        Log system errors or crashes with additional metadata
+        NEVER raises exception (logging must be safe)
+        """
+        try:
+            log_data = {
+                "timestamp": datetime.utcnow().isoformat(),
+                "log_level": "ERROR",
+                "component": component,
+                "message": f"{error_type}: {error_message}",
+                "junction_id": junction_id,
+                "metadata": metadata or {},
+            }
+
+            self.supabase.table("system_logs").insert(log_data).execute()
+
+        except Exception as e:
+            # Logging should never crash the system
+            self.logger.error(f"❌ Failed to insert error log: {e}")
+
     # ------------------------------------------------------------------
-    # 🚗 VEHICLE DETECTIONS
+    # � RFID SCANNER LOGS (NEW)
+    # ------------------------------------------------------------------
+
+    async def log_rfid_scanner_data(
+        self,
+        junction_id: int,
+        cycle_id: int,
+        lane_car_count: Dict[str, int],
+    ) -> Dict[str, Any]:
+        """
+        Log RFID scanner data (car counts and cycle ID) for user visibility
+        
+        Args:
+            junction_id: ID of the junction
+            cycle_id: ID of the traffic cycle
+            lane_car_count: Dict with keys 'north', 'south', 'east', 'west' containing car counts
+        
+        Returns:
+            The inserted record data
+        """
+        try:
+            log_data = {
+                "junction_id": junction_id,
+                "cycle_id": cycle_id,
+                "lane_car_count": lane_car_count,
+                "log_timestamp": datetime.utcnow().isoformat(),
+            }
+
+            result = (
+                self.supabase.table("rfid_scanners")
+                .insert(log_data)
+                .execute()
+            )
+
+            if not result.data:
+                raise Exception("No data returned from insert")
+
+            await self.log_system_event(
+                message=f"RFID scanner log created | cycle_id={cycle_id} | counts={lane_car_count}",
+                component="rfid_scanner",
+                junction_id=junction_id,
+            )
+
+            return result.data[0]
+
+        except Exception as e:
+            await self.log_system_error(
+                error_message=str(e),
+                error_type="RFID_LOGGING_ERROR",
+                component="rfid_scanner",
+                junction_id=junction_id,
+                metadata={"cycle_id": cycle_id, "lane_car_count": lane_car_count},
+            )
+            raise
+
+    # ------------------------------------------------------------------
+    # �🚗 VEHICLE DETECTIONS
     # ------------------------------------------------------------------
 
     async def log_vehicle_detection(

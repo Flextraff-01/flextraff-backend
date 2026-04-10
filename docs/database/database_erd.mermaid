@@ -1,0 +1,155 @@
+erDiagram
+    users ||--o{ user_junction_access : "has access to"
+    junctions ||--o{ user_junction_access : "accessible by"
+    junctions ||--o{ lanes : "contains"
+    lanes ||--o{ edge_devices : "has"
+    junctions ||--o{ traffic_cycles : "has cycles"
+    traffic_cycles ||--o{ lane_cycle_data : "contains"
+    lanes ||--o{ lane_cycle_data : "records data for"
+    junctions ||--o{ manual_override_history : "has overrides"
+    users ||--o{ manual_override_history : "created by"
+    users ||--o{ traffic_cycles : "may override"
+    
+    users {
+        uuid user_id PK
+        varchar username UK
+        varchar email UK
+        varchar password_hash
+        varchar full_name
+        boolean is_admin
+        boolean is_active
+        timestamp created_at
+        timestamp updated_at
+        timestamp last_login
+    }
+    
+    junctions {
+        uuid junction_id PK
+        varchar junction_name
+        varchar city
+        decimal latitude
+        decimal longitude
+        varchar status
+        varchar current_mode
+        int min_cycle_time
+        int max_cycle_time
+        int base_cycle_time
+        timestamp created_at
+        timestamp updated_at
+        timestamp last_heartbeat
+    }
+    
+    user_junction_access {
+        uuid access_id PK
+        uuid user_id FK
+        uuid junction_id FK
+        timestamp granted_at
+        uuid granted_by FK
+    }
+    
+    lanes {
+        uuid lane_id PK
+        uuid junction_id FK
+        int lane_index
+        varchar lane_name
+        varchar direction_enum
+        boolean is_active
+        timestamp created_at
+    }
+    
+    edge_devices {
+        uuid device_id PK
+        uuid lane_id FK
+        varchar device_type
+        varchar mac_address UK
+        inet ip_address
+        varchar device_name
+        varchar software_version
+        varchar firmware_version
+        varchar status
+        timestamp last_heartbeat
+        varchar mqtt_topic_publish
+        varchar mqtt_topic_subscribe
+        timestamp created_at
+        timestamp updated_at
+    }
+    
+    traffic_cycles {
+        uuid cycle_id PK
+        uuid junction_id FK
+        timestamp cycle_start_time
+        timestamp cycle_end_time
+        int total_cycle_time
+        varchar cycle_mode
+        uuid override_by_user_id FK
+        timestamp created_at
+    }
+    
+    lane_cycle_data {
+        uuid record_id PK
+        uuid cycle_id FK
+        uuid lane_id FK
+        int vehicle_count
+        text-array epc_ids
+        int green_time_seconds
+        timestamp green_time_start
+        timestamp green_time_end
+        boolean was_congested
+        int congestion_level
+        timestamp created_at
+    }
+    
+    manual_override_history {
+        uuid override_id PK
+        uuid junction_id FK
+        uuid user_id FK
+        int total_cycle_time
+        int north_lane_time
+        int south_lane_time
+        int east_lane_time
+        int west_lane_time
+        timestamp override_start
+        timestamp override_end
+        int duration_minutes
+        text reason
+        timestamp created_at
+    }
+    
+    system_logs {
+        uuid log_id PK
+        uuid junction_id FK
+        uuid device_id FK
+        uuid user_id FK
+        varchar log_level
+        varchar log_type
+        text message
+        jsonb metadata
+        text stack_trace
+        timestamp logged_at
+        boolean is_archived
+    }
+    
+    mqtt_messages {
+        uuid message_id PK
+        varchar topic
+        jsonb payload
+        int qos
+        varchar direction
+        uuid device_id FK
+        timestamp received_at
+        boolean is_archived
+    }
+    
+    junction_daily_stats {
+        uuid stat_id PK
+        uuid junction_id FK
+        date stat_date
+        int total_cycles
+        int total_vehicles
+        decimal avg_cycle_time
+        int max_vehicle_count
+        time peak_hour
+        int automatic_cycles
+        int manual_override_cycles
+        timestamp computed_at
+    }

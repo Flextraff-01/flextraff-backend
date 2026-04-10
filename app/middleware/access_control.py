@@ -53,6 +53,7 @@ async def get_optional_user(
         return None
 
 
+# This function can be used to delete junction ids or update info only by the admins and will give error to regular users.
 async def require_admin(user: dict = Depends(get_current_user)) -> dict:
     """Require ADMIN role"""
     if user.get("role") != "ADMIN":

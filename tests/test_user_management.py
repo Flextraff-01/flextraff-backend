@@ -3,7 +3,9 @@ Test cases for the user management and access control system
 """
 
 import pytest
+import pytest_asyncio
 import asyncio
+import time
 from fastapi.testclient import TestClient
 from app.services.user_management_service import UserManagementService
 from app.utils.access_helpers import check_access, filter_junctions
@@ -20,44 +22,47 @@ def user_service():
     return UserManagementService()
 
 
-@pytest.fixture
+@pytest_asyncio.fixture
 async def admin_user():
     """Create test admin user"""
     service = UserManagementService()
+    unique_id = int(time.time() * 1000)
     user = await service.create_user(
-        username="test_admin",
+        username=f"test_admin_{unique_id}",
         password="AdminPass123!",
         full_name="Test Admin",
         role="ADMIN",
-        email="admin@test.com"
+        email=f"admin_{unique_id}@test.com"
     )
     return user
 
 
-@pytest.fixture
+@pytest_asyncio.fixture
 async def operator_user():
     """Create test operator user"""
     service = UserManagementService()
+    unique_id = int(time.time() * 1000)
     user = await service.create_user(
-        username="test_operator",
+        username=f"test_operator_{unique_id}",
         password="OpPass123!",
         full_name="Test Operator",
         role="OPERATOR",
-        email="op@test.com"
+        email=f"op_{unique_id}@test.com"
     )
     return user
 
 
-@pytest.fixture
+@pytest_asyncio.fixture
 async def observer_user():
     """Create test observer user"""
     service = UserManagementService()
+    unique_id = int(time.time() * 1000)
     user = await service.create_user(
-        username="test_observer",
+        username=f"test_observer_{unique_id}",
         password="ObsPass123!",
         full_name="Test Observer",
         role="OBSERVER",
-        email="obs@test.com"
+        email=f"obs_{unique_id}@test.com"
     )
     return user
 
@@ -104,23 +109,25 @@ class TestUserCreation:
     @pytest.mark.asyncio
     async def test_create_admin_user(self, user_service):
         """Test creating admin user"""
+        unique_name = f"new_admin_{int(time.time() * 1000)}"
         user = await user_service.create_user(
-            username="new_admin",
+            username=unique_name,
             password="AdminPass123!",
             full_name="New Admin",
             role="ADMIN"
         )
         
         assert user is not None
-        assert user["username"] == "new_admin"
+        assert user["username"] == unique_name
         assert user["role"] == "ADMIN"
         assert "password_hash" not in user
 
     @pytest.mark.asyncio
     async def test_create_operator_user(self, user_service):
         """Test creating operator user"""
+        unique_name = f"new_operator_{int(time.time() * 1000)}"
         user = await user_service.create_user(
-            username="new_operator",
+            username=unique_name,
             password="OpPass123!",
             full_name="New Operator",
             role="OPERATOR"
@@ -132,8 +139,9 @@ class TestUserCreation:
     @pytest.mark.asyncio
     async def test_create_observer_user(self, user_service):
         """Test creating observer user"""
+        unique_name = f"new_observer_{int(time.time() * 1000)}"
         user = await user_service.create_user(
-            username="new_observer",
+            username=unique_name,
             password="ObsPass123!",
             full_name="New Observer",
             role="OBSERVER"
@@ -405,8 +413,9 @@ class TestIntegration:
     async def test_user_lifecycle(self, user_service):
         """Test complete user lifecycle"""
         # 1. Create user
+        unique_name = f"lifecycle_test_{int(time.time() * 1000)}"
         user = await user_service.create_user(
-            username="lifecycle_test",
+            username=unique_name,
             password="LifePass123!",
             full_name="Lifecycle Test",
             role="OPERATOR"
@@ -425,7 +434,7 @@ class TestIntegration:
 
         # 3. Authenticate user
         authenticated = await user_service.authenticate_user(
-            "lifecycle_test",
+            unique_name,
             "LifePass123!"
         )
         assert authenticated is not None
