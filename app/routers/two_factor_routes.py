@@ -52,7 +52,7 @@ async def setup_two_factor(current_user=Depends(get_current_user)):
     # Save temporary secret
     auth_service = get_auth_service()
     auth_service.supabase.table("users").update({
-        "totp_secret_temp": secret
+        "totp_temp_secret": secret
     }).eq("id", user_id).execute()
 
     return {
@@ -77,7 +77,7 @@ async def verify_two_factor(
 
     user_id = current_user["id"]
 
-    temp_secret = current_user.get("totp_secret_temp")
+    temp_secret = current_user.get("totp_temp_secret")
 
     if not temp_secret:
         raise HTTPException(
@@ -95,7 +95,7 @@ async def verify_two_factor(
     auth_service = get_auth_service()
     auth_service.supabase.table("users").update({
         "totp_secret": temp_secret,
-        "totp_secret_temp": None,
+        "totp_temp_secret": None,
         "is_2fa_enabled": True
     }).eq("id", user_id).execute()
 
@@ -191,7 +191,7 @@ async def disable_two_factor(
     auth_service = get_auth_service()
     auth_service.supabase.table("users").update({
         "totp_secret": None,
-        "totp_secret_temp": None,
+        "totp_temp_secret": None,
         "is_2fa_enabled": False
     }).eq("id", user_id).execute()
 
