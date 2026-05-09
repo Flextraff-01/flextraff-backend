@@ -60,22 +60,35 @@ async def login(
                 detail="Invalid username or password",
             )
 
-        # If 2FA enabled → frontend must call /auth/2fa/login
-        if user.get("is_2fa_enabled"):
+        # ==================================================
+        # 2FA NOT ENABLED → FORCE SETUP
+        # ==================================================
+        if not user.get("is_2fa_enabled"):
+
+            # Create temporary session token
+            temp_session = await user_service.create_session(
+                user,
+                ip_address=request.client.host if request.client else None,
+                user_agent=request.headers.get("user-agent"),
+            )
+
             return {
-                "requires_2fa": True,
+                "requires_2fa_setup": True,
+                "is_2fa_enabled": False,
                 "username": user["username"],
-                "message": "Two-factor authentication required"
+                "temp_token": temp_session["access_token"],
+                "message": "2FA setup required"
             }
 
-        # Normal login (no 2FA)
-        session = await user_service.create_session(
-            user,
-            ip_address=request.client.host if request.client else None,
-            user_agent=request.headers.get("user-agent"),
-        )
-
-        return session
+        # ==================================================
+        # 2FA ENABLED → VERIFY OTP
+        # ==================================================
+        return {
+            "requires_2fa": True,
+            "is_2fa_enabled": True,
+            "username": user["username"],
+            "message": "OTP verification required"
+        }
 
     except HTTPException:
         raise
