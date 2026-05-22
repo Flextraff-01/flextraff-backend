@@ -258,58 +258,6 @@ async def delete_junction(
 # USER-JUNCTION ALLOCATION ENDPOINTS
 # ============================================================================
 
-
-@router.post("/users/{user_id}/junctions")
-async def grant_junction_access(
-    user_id: int,
-    access_data: JunctionAccessCreate,
-    admin: dict = Depends(require_admin),
-    user_service: UserManagementService = Depends(get_user_service),
-) -> dict:
-    """
-    Grant user access to a single junction (admin only)
-    """
-
-    try:
-        access = await user_service.grant_junction_access(
-            user_id=user_id,
-            junction_id=access_data.junction_id,
-            access_level=access_data.access_level,
-            granted_by=admin["id"],
-        )
-
-        if not access:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Failed to grant junction access",
-            )
-
-        await user_service.log_audit(
-            user_id=admin["id"],
-            action="GRANT_JUNCTION_ACCESS",
-            resource=f"user_{user_id}",
-            details={
-                "junction_id": access_data.junction_id,
-                "access_level": access_data.access_level,
-            },
-        )
-
-        return {
-            "status": "success",
-            "message": f"Access granted to junction {access_data.junction_id}",
-            "access": access,
-        }
-
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Error granting junction access: {str(e)}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to grant junction access",
-        )
-
-
 @router.post("/users/{user_id}/junctions/bulk")
 async def grant_bulk_junction_access(
     user_id: int,
@@ -363,6 +311,56 @@ async def grant_bulk_junction_access(
         raise
     except Exception as e:
         logger.error(f"Error granting bulk junction access: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to grant junction access",
+        )
+
+@router.post("/users/{user_id}/junctions")
+async def grant_junction_access(
+    user_id: int,
+    access_data: JunctionAccessCreate,
+    admin: dict = Depends(require_admin),
+    user_service: UserManagementService = Depends(get_user_service),
+) -> dict:
+    """
+    Grant user access to a single junction (admin only)
+    """
+
+    try:
+        access = await user_service.grant_junction_access(
+            user_id=user_id,
+            junction_id=access_data.junction_id,
+            access_level=access_data.access_level,
+            granted_by_user_id=admin["id"],
+        )
+
+        if not access:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Failed to grant junction access",
+            )
+
+        await user_service.log_audit(
+            user_id=admin["id"],
+            action="GRANT_JUNCTION_ACCESS",
+            resource=f"user_{user_id}",
+            details={
+                "junction_id": access_data.junction_id,
+                "access_level": access_data.access_level,
+            },
+        )
+
+        return {
+            "status": "success",
+            "message": f"Access granted to junction {access_data.junction_id}",
+            "access": access,
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error granting junction access: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to grant junction access",
