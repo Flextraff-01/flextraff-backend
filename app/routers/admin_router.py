@@ -379,7 +379,7 @@ async def revoke_junction_access(
     """
 
     try:
-        success = await user_service.revoke_junction_access(user_id, junction_id)
+        success = await user_service.revoke_junction_access(user_id, junction_id, revoked_by_user_id=admin["id"],)
 
         if not success:
             raise HTTPException(
