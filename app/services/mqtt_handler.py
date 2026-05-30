@@ -4,7 +4,7 @@ import httpx
 import asyncio
 import logging
 # existing imports...
-from ws_broadcast import manager  # import the manager to broadcast messages
+from app.websocket.ws_broadcast import manager  # import the manager to broadcast messages
 from app.services.database_service import DatabaseService
 
 logger = logging.getLogger(__name__)

@@ -29,7 +29,7 @@ router = APIRouter(prefix="/api/v1/users", tags=["users"])
 
 # FIX: lazy logger to avoid NameError caused by circular imports at module load time
 def get_logger():
-    return logging.getLogger(_name_)
+    return logging.getLogger(__name__)
 
 
 def get_user_service():
