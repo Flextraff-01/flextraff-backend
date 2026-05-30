@@ -12,7 +12,7 @@ from jose import JWTError, jwt
 from passlib.context import CryptContext
 from supabase import Client, create_client
 
-from app.config import settings
+from config import settings
 
 
 class UserManagementService:

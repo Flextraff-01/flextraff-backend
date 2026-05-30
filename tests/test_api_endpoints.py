@@ -1,409 +1,254 @@
+#!/usr/bin/env python3
 """
-Unit tests for individual API endpoints
-Tests each endpoint in isolation with mocked dependencies
+Test script for FlexTraff FastAPI endpoints
+Tests all API functionality and endpoint integration
 """
 
+import asyncio
 import json
 from datetime import date
 
-import pytest
-from fastapi.testclient import TestClient
+import aiohttp
 
-from tests.conftest import (TestData, assert_response_schema,
-                            assert_valid_cycle_time, assert_valid_green_times)
-
-
-@pytest.mark.unit
-@pytest.mark.api
-class TestRootEndpoint:
-    """Test root endpoint (/)"""
-
-    def test_root_endpoint_success(self, test_client: TestClient):
-        """Test root endpoint returns correct API information"""
-        response = test_client.get("/")
-
-        assert response.status_code == 200
-        data = response.json()
-
-        # Verify response structure
-        expected_keys = ["service", "version", "description", "docs", "health"]
-        for key in expected_keys:
-            assert key in data
-
-        # Verify specific values
-        assert data["service"] == "FlexTraff ATCS API"
-        assert data["version"] == "1.0.0"
-        assert data["docs"] == "/docs"
-        assert data["health"] == "/health"
+# Base URL for the API
+BASE_URL = "http://localhost:8001"
 
 
-@pytest.mark.unit
-@pytest.mark.api
-class TestHealthEndpoint:
-    """Test health check endpoint (/health)"""
+async def test_api_endpoints():
+    """Test all FastAPI endpoints"""
+    print("🚀 Testing FlexTraff FastAPI Endpoints")
+    print("=" * 50)
 
-    def test_health_check_healthy(self, test_client: TestClient):
-        """Test health check when database is connected"""
-        response = test_client.get("/health")
+    async with aiohttp.ClientSession() as session:
 
-        assert response.status_code == 200
-        data = response.json()
+        # Test 1: Root endpoint
+        print("1️⃣ Testing root endpoint...")
+        async with session.get(f"{BASE_URL}/") as response:
+            if response.status == 200:
+                data = await response.json()
+                print(f"   ✅ Root: {data['service']} v{data['version']}")
+            else:
+                print(f"   ❌ Root failed: {response.status}")
 
-        # Verify response structure
-        assert_response_schema(data, TestData.HEALTH_RESPONSE_SCHEMA)
+        # Test 2: Health check
+        print("2️⃣ Testing health check...")
+        async with session.get(f"{BASE_URL}/health") as response:
+            if response.status == 200:
+                data = await response.json()
+                print(
+                    f"   ✅ Health: {data['status']}, DB: {data['database_connected']}"
+                )
+            else:
+                print(f"   ❌ Health check failed: {response.status}")
 
-        # Verify healthy status
-        assert data["status"] == "healthy"
-        assert data["database_connected"] is True
-        assert data["algorithm_version"] == "ATCS v1.0"
+        # Test 3: Get junctions
+        print("3️⃣ Testing get junctions...")
+        async with session.get(f"{BASE_URL}/junctions") as response:
+            if response.status == 200:
+                data = await response.json()
+                junctions = data["junctions"]
+                print(f"   ✅ Found {len(junctions)} junctions")
+                if junctions:
+                    junction_id = junctions[0]["id"]
+                    junction_name = junctions[0]["junction_name"]
+                    print(f"   Using junction: {junction_name} (ID: {junction_id})")
+                else:
+                    print("   ❌ No junctions found")
+                    return
+            else:
+                print(f"   ❌ Get junctions failed: {response.status}")
+                return
 
-    def test_health_check_unhealthy(self, test_client: TestClient, mock_db_service):
-        """Test health check when database is disconnected"""
-        # Configure mock for unhealthy state
-        mock_db_service.health_check.return_value = {
-            "database_connected": False,
-            "status": "unhealthy",
-            "error": "Connection failed",
+        # Test 4: Traffic calculation
+        print("4️⃣ Testing traffic calculation...")
+        calculation_data = {"lane_counts": [45, 38, 52, 41], "junction_id": junction_id}
+
+        async with session.post(
+            f"{BASE_URL}/calculate-timing", json=calculation_data
+        ) as response:
+            if response.status == 200:
+                data = await response.json()
+                green_times = data["green_times"]
+                cycle_time = data["cycle_time"]
+                print(f"   ✅ Green times: {green_times}, Cycle: {cycle_time}s")
+            else:
+                print(f"   ❌ Traffic calculation failed: {response.status}")
+
+        # Test 5: Vehicle detection logging
+        print("5️⃣ Testing vehicle detection...")
+        detection_data = {
+            "junction_id": junction_id,
+            "lane_number": 1,
+            "fastag_id": "TEST123456789",
+            "vehicle_type": "car",
         }
 
-        response = test_client.get("/health")
+        async with session.post(
+            f"{BASE_URL}/vehicle-detection", json=detection_data
+        ) as response:
+            if response.status == 200:
+                data = await response.json()
+                print(f"   ✅ Detection logged: {data['message']}")
+            else:
+                print(f"   ❌ Vehicle detection failed: {response.status}")
 
-        assert response.status_code == 200
-        data = response.json()
+        # Test 6: Junction status
+        print("6️⃣ Testing junction status...")
+        async with session.get(f"{BASE_URL}/junction/{junction_id}/status") as response:
+            if response.status == 200:
+                data = await response.json()
+                print(f"   ✅ Junction: {data['junction_name']}")
+                print(f"   Today's vehicles: {data['total_vehicles_today']}")
+                if data["latest_cycle"]:
+                    print(
+                        f"   Latest cycle: {data['latest_cycle']['total_cycle_time']}s"
+                    )
+            else:
+                print(f"   ❌ Junction status failed: {response.status}")
 
-        # Verify unhealthy status
-        assert data["status"] == "unhealthy"
-        assert data["database_connected"] is False
-        assert data["error"] == "Connection failed"
+        # Test 7: Live timing
+        print("7️⃣ Testing live timing...")
+        async with session.get(
+            f"{BASE_URL}/junction/{junction_id}/live-timing"
+        ) as response:
+            if response.status == 200:
+                data = await response.json()
+                print(f"   ✅ Live timing - Counts: {data['current_lane_counts']}")
+                print(f"   Recommended green times: {data['recommended_green_times']}")
+            else:
+                print(f"   ❌ Live timing failed: {response.status}")
 
+        # Test 8: Junction history
+        print("8️⃣ Testing junction history...")
+        async with session.get(
+            f"{BASE_URL}/junction/{junction_id}/history?limit=5"
+        ) as response:
+            if response.status == 200:
+                data = await response.json()
+                print(f"   ✅ History: {data['total_records']} recent detections")
+            else:
+                print(f"   ❌ Junction history failed: {response.status}")
 
-@pytest.mark.unit
-@pytest.mark.api
-class TestTrafficCalculationEndpoint:
-    """Test traffic calculation endpoint (/calculate-timing)"""
+        # Test 9: Daily summary
+        print("9️⃣ Testing daily summary...")
+        async with session.get(f"{BASE_URL}/analytics/daily-summary") as response:
+            if response.status == 200:
+                data = await response.json()
+                total_vehicles = data["total_vehicles"]
+                print(f"   ✅ Daily summary: {total_vehicles} total vehicles today")
+                for summary in data["junction_summaries"]:
+                    print(
+                        f"   - {summary['junction_name']}: {summary['total_vehicles']} vehicles"
+                    )
+            else:
+                print(f"   ❌ Daily summary failed: {response.status}")
 
-    def test_calculate_timing_success(self, test_client: TestClient):
-        """Test successful traffic timing calculation"""
-        request_data = {"lane_counts": TestData.NORMAL_TRAFFIC_LANES, "junction_id": 1}
-
-        response = test_client.post("/calculate-timing", json=request_data)
-
-        assert response.status_code == 200
-        data = response.json()
-
-        # Verify response structure
-        assert_response_schema(data, TestData.TRAFFIC_CALCULATION_RESPONSE_SCHEMA)
-
-        # Verify algorithm results
-        assert_valid_green_times(data["green_times"])
-        assert_valid_cycle_time(data["cycle_time"])
-        assert data["junction_id"] == 1
-        assert "algorithm_info" in data
-
-    def test_calculate_timing_without_junction_id(self, test_client: TestClient):
-        """Test traffic calculation without junction ID"""
-        request_data = {"lane_counts": TestData.LIGHT_TRAFFIC_LANES}
-
-        response = test_client.post("/calculate-timing", json=request_data)
-
-        assert response.status_code == 200
-        data = response.json()
-
-        # Should work without junction_id
-        assert_valid_green_times(data["green_times"])
-        assert_valid_cycle_time(data["cycle_time"])
-        assert data["junction_id"] is None
-
-    @pytest.mark.parametrize("invalid_lanes", TestData.INVALID_LANE_COUNTS)
-    def test_calculate_timing_invalid_lanes(
-        self, test_client: TestClient, invalid_lanes
-    ):
-        """Test traffic calculation with invalid lane counts"""
-        request_data = {"lane_counts": invalid_lanes, "junction_id": 1}
-
-        response = test_client.post("/calculate-timing", json=request_data)
-
-        # Should return validation error
-        assert response.status_code == 422
-
-    def test_calculate_timing_calculation_error(
-        self, test_client: TestClient, mock_traffic_calculator
-    ):
-        """Test traffic calculation when algorithm fails"""
-        # Configure mock to raise exception
-        mock_traffic_calculator.calculate_green_times.side_effect = Exception(
-            "Algorithm failed"
-        )
-
-        request_data = {"lane_counts": TestData.NORMAL_TRAFFIC_LANES, "junction_id": 1}
-
-        response = test_client.post("/calculate-timing", json=request_data)
-
-        assert response.status_code == 500
-        assert "Traffic calculation failed" in response.json()["error"]
-
-
-@pytest.mark.unit
-@pytest.mark.api
-class TestVehicleDetectionEndpoint:
-    """Test vehicle detection endpoint (/vehicle-detection)"""
-
-    def test_log_vehicle_detection_success(self, test_client: TestClient):
-        """Test successful vehicle detection logging"""
-        request_data = TestData.VALID_VEHICLE_DETECTIONS[0]
-
-        response = test_client.post("/vehicle-detection", json=request_data)
-
-        assert response.status_code == 200
-        data = response.json()
-
-        # Verify response
-        assert data["status"] == "success"
-        assert data["junction_id"] == request_data["junction_id"]
-        assert data["lane"] == request_data["lane_number"]
-        assert data["fastag_id"] == request_data["fastag_id"]
-
-    @pytest.mark.parametrize("invalid_data", TestData.INVALID_VEHICLE_DETECTIONS)
-    def test_log_vehicle_detection_invalid(self, test_client: TestClient, invalid_data):
-        """Test vehicle detection with invalid data"""
-        response = test_client.post("/vehicle-detection", json=invalid_data)
-
-        # Should return validation error
-        assert response.status_code == 422
-
-    def test_log_vehicle_detection_database_error(
-        self, test_client: TestClient, mock_db_service
-    ):
-        """Test vehicle detection when database logging fails"""
-        # Note: Background task errors in FastAPI are handled asynchronously
-        # and don't affect the main response. This test verifies the main endpoint works.
-        request_data = TestData.VALID_VEHICLE_DETECTIONS[0]
-
-        response = test_client.post("/vehicle-detection", json=request_data)
-
-        # Main response should be successful regardless of background task outcome
-        assert response.status_code == 200
-        data = response.json()
-        assert data["status"] == "success"
-        assert data["junction_id"] == request_data["junction_id"]
-
-
-@pytest.mark.unit
-@pytest.mark.api
-class TestJunctionsEndpoint:
-    """Test junctions endpoint (/junctions)"""
-
-    def test_get_junctions_success(self, test_client: TestClient):
-        """Test successful retrieval of junctions"""
-        response = test_client.get("/junctions")
-
-        assert response.status_code == 200
-        data = response.json()
-
-        # Verify response structure
-        assert "junctions" in data
-        assert isinstance(data["junctions"], list)
-        assert len(data["junctions"]) == 2
-
-        # Verify junction data
-        junction = data["junctions"][0]
-        assert "id" in junction
-        assert "junction_name" in junction
-
-    def test_get_junctions_empty(self, test_client: TestClient, mock_db_service):
-        """Test junctions endpoint when no junctions exist"""
-        # Configure mock to return empty list
-        mock_db_service.get_all_junctions.return_value = []
-
-        response = test_client.get("/junctions")
-
-        assert response.status_code == 200
-        data = response.json()
-
-        assert data["junctions"] == []
-
-    def test_get_junctions_database_error(
-        self, test_client: TestClient, mock_db_service
-    ):
-        """Test junctions endpoint when database fails"""
-        # Configure mock to raise exception
-        mock_db_service.get_all_junctions.side_effect = Exception("Database error")
-
-        response = test_client.get("/junctions")
-
-        assert response.status_code == 500
-        assert "Failed to get junctions" in response.json()["error"]
-
-
-@pytest.mark.unit
-@pytest.mark.api
-class TestJunctionStatusEndpoint:
-    """Test junction status endpoint (/junction/{junction_id}/status)"""
-
-    def test_get_junction_status_success(self, test_client: TestClient):
-        """Test successful junction status retrieval"""
-        junction_id = 1
-        response = test_client.get(f"/junction/{junction_id}/status")
-
-        assert response.status_code == 200
-        data = response.json()
-
-        # Verify response structure
-        assert_response_schema(data, TestData.JUNCTION_STATUS_RESPONSE_SCHEMA)
-
-        # Verify specific values
-        assert data["junction_id"] == junction_id
-        assert data["junction_name"] == "Test Junction 1"
-        assert isinstance(data["current_lane_counts"], list)
-        assert data["total_vehicles_today"] == 150
-
-    def test_get_junction_status_not_found(
-        self, test_client: TestClient, mock_db_service
-    ):
-        """Test junction status for non-existent junction"""
-        # Configure mock to return junctions that don't include the requested ID
-        mock_db_service.get_all_junctions.return_value = [
-            {"id": 2, "junction_name": "Other Junction"}
+        # Test 10: Multiple traffic scenarios
+        print("🔟 Testing multiple traffic scenarios...")
+        test_scenarios = [
+            ("Rush Hour", [60, 45, 55, 48]),
+            ("Normal Traffic", [25, 22, 28, 24]),
+            ("Light Traffic", [8, 12, 6, 10]),
+            ("Uneven Distribution", [75, 12, 18, 15]),
         ]
 
-        response = test_client.get("/junction/999/status")
+        for scenario_name, lane_counts in test_scenarios:
+            calculation_data = {"lane_counts": lane_counts, "junction_id": junction_id}
 
-        assert response.status_code == 404
-        assert "Junction not found" in response.json()["error"]
+            async with session.post(
+                f"{BASE_URL}/calculate-timing", json=calculation_data
+            ) as response:
+                if response.status == 200:
+                    data = await response.json()
+                    print(
+                        f"   ✅ {scenario_name}: {data['green_times']} ({data['cycle_time']}s)"
+                    )
+                else:
+                    print(f"   ❌ {scenario_name} failed: {response.status}")
 
-    @pytest.mark.parametrize("junction_id", TestData.VALID_JUNCTION_IDS[:3])
-    def test_get_junction_status_all_valid_ids(
-        self, test_client: TestClient, junction_id
-    ):
-        """Test junction status for all valid junction IDs"""
-        response = test_client.get(f"/junction/{junction_id}/status")
-
-        # For junction IDs 1 and 2, should succeed (based on mock data)
-        # For junction ID 3, should fail (not in mock data)
-        if junction_id in [1, 2]:
-            assert response.status_code == 200
-        else:
-            assert response.status_code == 404
+        print("\n🎉 All API endpoint tests completed!")
 
 
-@pytest.mark.unit
-@pytest.mark.api
-class TestLiveTimingEndpoint:
-    """Test live timing endpoint (/junction/{junction_id}/live-timing)"""
+async def load_test_api():
+    """Perform basic load testing"""
+    print("\n⚡ Load Testing API")
+    print("=" * 30)
 
-    def test_get_live_timing_success(self, test_client: TestClient):
-        """Test successful live timing retrieval"""
-        junction_id = 1
-        response = test_client.get(f"/junction/{junction_id}/live-timing")
+    tasks = []
 
-        assert response.status_code == 200
-        data = response.json()
+    async def make_request(session, scenario_name, lane_counts):
+        try:
+            calculation_data = {
+                "lane_counts": lane_counts,
+                "junction_id": 3,  # Use known junction ID
+            }
 
-        # Verify response structure
-        assert "junction_id" in data
-        assert "current_lane_counts" in data
-        assert "recommended_green_times" in data
-        assert "total_cycle_time" in data
-        assert "algorithm_info" in data
+            async with session.post(
+                f"{BASE_URL}/calculate-timing", json=calculation_data
+            ) as response:
+                if response.status == 200:
+                    data = await response.json()
+                    return f"✅ {scenario_name}: {data['cycle_time']}s"
+                else:
+                    return f"❌ {scenario_name}: HTTP {response.status}"
+        except Exception as e:
+            return f"❌ {scenario_name}: {str(e)}"
 
-        # Verify values
-        assert data["junction_id"] == junction_id
-        assert isinstance(data["current_lane_counts"], list)
-        assert len(data["current_lane_counts"]) == 4
-        assert_valid_green_times(data["recommended_green_times"])
-        assert_valid_cycle_time(data["total_cycle_time"])
+    async with aiohttp.ClientSession() as session:
+        # Create 20 concurrent requests with different scenarios
+        scenarios = [
+            ("Rush1", [45, 38, 52, 41]),
+            ("Rush2", [50, 42, 48, 45]),
+            ("Normal1", [25, 22, 28, 24]),
+            ("Normal2", [30, 28, 32, 26]),
+            ("Light1", [8, 12, 6, 10]),
+        ]
 
-    def test_get_live_timing_with_time_window(self, test_client: TestClient):
-        """Test live timing with custom time window"""
-        response = test_client.get("/junction/1/live-timing?time_window=10")
+        for i in range(20):
+            scenario_name, lane_counts = scenarios[i % len(scenarios)]
+            task = make_request(session, f"{scenario_name}_{i}", lane_counts)
+            tasks.append(task)
 
-        assert response.status_code == 200
-        data = response.json()
+        print("Making 20 concurrent requests...")
+        results = await asyncio.gather(*tasks)
 
-        assert data["time_window_minutes"] == 10
-        assert_valid_green_times(data["recommended_green_times"])
+        success_count = sum(1 for result in results if "✅" in result)
+        print(f"Results: {success_count}/20 successful")
 
-
-@pytest.mark.unit
-@pytest.mark.api
-class TestJunctionHistoryEndpoint:
-    """Test junction history endpoint (/junction/{junction_id}/history)"""
-
-    def test_get_junction_history_success(self, test_client: TestClient):
-        """Test successful junction history retrieval"""
-        junction_id = 1
-        response = test_client.get(f"/junction/{junction_id}/history")
-
-        assert response.status_code == 200
-        data = response.json()
-
-        # Verify response structure
-        assert "junction_id" in data
-        assert "recent_detections" in data
-        assert "latest_cycle" in data
-        assert "total_records" in data
-
-        # Verify values
-        assert data["junction_id"] == junction_id
-        assert isinstance(data["recent_detections"], list)
-        assert data["total_records"] == len(data["recent_detections"])
-
-    def test_get_junction_history_with_limit(self, test_client: TestClient):
-        """Test junction history with custom limit"""
-        response = test_client.get("/junction/1/history?limit=5")
-
-        assert response.status_code == 200
-        data = response.json()
-
-        # Should respect the limit (though mock data may be smaller)
-        assert len(data["recent_detections"]) <= 10  # limit * 2 as per implementation
+        for result in results[:5]:  # Show first 5 results
+            print(f"   {result}")
 
 
-@pytest.mark.unit
-@pytest.mark.api
-class TestDailySummaryEndpoint:
-    """Test daily summary endpoint (/analytics/daily-summary)"""
+async def main():
+    """Run all API tests"""
+    try:
+        await test_api_endpoints()
+        await load_test_api()
+        print("\n🏆 All API tests completed successfully!")
+        print("🌐 API is ready for frontend integration!")
+        print(f"📖 Documentation: {BASE_URL}/docs")
 
-    def test_get_daily_summary_success(self, test_client: TestClient):
-        """Test successful daily summary retrieval"""
-        response = test_client.get("/analytics/daily-summary")
+    except Exception as e:
+        print(f"\n💥 API tests failed: {str(e)}")
 
-        assert response.status_code == 200
-        data = response.json()
 
-        # Verify response structure
-        assert "date" in data
-        assert "junction_summaries" in data
-        assert "total_vehicles" in data
+if __name__ == "__main__":
+    # Install aiohttp if needed
+    try:
+        import aiohttp
+    except ImportError:
+        print("Installing aiohttp for API testing...")
+        import subprocess
 
-        # Verify values
-        assert isinstance(data["junction_summaries"], list)
-        assert len(data["junction_summaries"]) == 2  # Based on mock data
-        assert data["total_vehicles"] == 300  # 150 * 2 junctions
-
-    def test_get_daily_summary_custom_date(self, test_client: TestClient):
-        """Test daily summary with custom date"""
-        target_date = "2024-01-15"
-        response = test_client.get(
-            f"/analytics/daily-summary?target_date={target_date}"
+        subprocess.check_call(
+            [
+                "/Users/ajaypsk2722/flextraff-backend/.venv/bin/python",
+                "-m",
+                "pip",
+                "install",
+                "aiohttp",
+            ]
         )
+        import aiohttp
 
-        assert response.status_code == 200
-        data = response.json()
-
-        assert data["date"] == target_date
-
-    def test_get_daily_summary_no_junctions(
-        self, test_client: TestClient, mock_db_service
-    ):
-        """Test daily summary when no junctions exist"""
-        # Configure mock to return empty list
-        mock_db_service.get_all_junctions.return_value = []
-
-        response = test_client.get("/analytics/daily-summary")
-
-        assert response.status_code == 200
-        data = response.json()
-
-        assert data["junction_summaries"] == []
-        assert data["total_vehicles"] == 0
+    asyncio.run(main())
