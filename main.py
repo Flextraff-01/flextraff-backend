@@ -10,9 +10,9 @@ import asyncio
 import logging
 from datetime import date, datetime
 from typing import Any, Dict, List, Optional
-from mqtt_handler import mqtt
+from app.services.mqtt_handler import mqtt
 from fastapi import WebSocket, WebSocketDisconnect
-from ws_broadcast import manager  # relative import depending on location
+from app.websocket.ws_broadcast import manager  # relative import depending on location
 
 
 
@@ -24,9 +24,9 @@ from pydantic import BaseModel, Field, field_validator
 from app.services.database_service import DatabaseService
 from app.services.traffic_calculator import TrafficCalculator
 
-from app.routers.two_factor_routes import router as two_factor_router
-from app.routers.user_router import router as user_router
-from app.routers.admin_router import router as admin_router
+from app.api.two_factor_api import router as two_factor_router
+from app.api.user_api import router as user_router
+from app.api.admin_api import router as admin_router
 
 # Setup logging
 logging.basicConfig(level=logging.INFO)
