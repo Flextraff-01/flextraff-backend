@@ -12,7 +12,7 @@ from jose import JWTError, jwt
 from passlib.context import CryptContext
 from supabase import Client, create_client
 
-from app.config import settings
+from config import settings
 
 
 class UserManagementService:
@@ -75,6 +75,109 @@ class UserManagementService:
         return self.pwd_context.verify(plain_password, hashed_password)
 
     # =========================================================================
+    # JUNCTION MANAGEMENT (ADMIN ONLY)
+    # =========================================================================
+
+    async def list_junctions(self, limit: int = 50, offset: int = 0) -> Tuple[List[Dict[str, Any]], int]:
+        """List all junctions with pagination"""
+        try:
+            count_result = self._get_supabase().table("traffic_junctions").select("id", count="exact").execute()
+            total = count_result.count or 0
+            result = (
+                self._get_supabase()
+                .table("traffic_junctions")
+                .select("*")
+                .order("id", desc=True)
+                .range(offset, offset + limit - 1)
+                .execute()
+            )
+            return result.data or [], total
+        except Exception as e:
+            self.logger.error(f"Error listing junctions: {str(e)}")
+            return [], 0
+
+    async def get_junction_by_id(self, junction_id: int) -> Optional[Dict[str, Any]]:
+        """Get junction by ID"""
+        try:
+            result = (
+                self._get_supabase()
+                .table("traffic_junctions")
+                .select("*")
+                .eq("id", junction_id)
+                .execute()
+            )
+            return result.data[0] if result.data else None
+        except Exception as e:
+            self.logger.error(f"Error fetching junction: {str(e)}")
+            return None
+
+    async def create_junction(
+        self,
+        junction_name: str,
+        latitude: float,
+        longitude: float,
+        city: str,
+        description: Optional[str] = None,
+    ) -> Optional[Dict[str, Any]]:
+        """Create a new junction"""
+        try:
+            data = {
+                "junction_name": junction_name,
+                "latitude":      latitude,
+                "longitude":     longitude,
+                "location":      city,
+            }
+            if description:
+                data["algorithm_config"] = description
+            result = self._get_supabase().table("traffic_junctions").insert(data).execute()
+            return result.data[0] if result.data else None
+        except Exception as e:
+            self.logger.error(f"Error creating junction: {str(e)}")
+            return None
+
+    async def update_junction(
+        self,
+        junction_id: int,
+        junction_name: Optional[str] = None,
+        latitude: Optional[float] = None,
+        longitude: Optional[float] = None,
+        city: Optional[str] = None,
+        description: Optional[str] = None,
+        is_active: Optional[bool] = None,
+    ) -> Optional[Dict[str, Any]]:
+        """Update junction details"""
+        try:
+            data = {}
+            if junction_name is not None: data["junction_name"] = junction_name
+            if latitude      is not None: data["latitude"]      = latitude
+            if longitude     is not None: data["longitude"]     = longitude
+            if city          is not None: data["location"]      = city
+            if description   is not None: data["algorithm_config"]   = description
+            if is_active     is not None: data["is_active"]     = is_active
+            if not data:
+                return None
+            result = (
+                self._get_supabase()
+                .table("traffic_junctions")
+                .update(data)
+                .eq("id", junction_id)
+                .execute()
+            )
+            return result.data[0] if result.data else None
+        except Exception as e:
+            self.logger.error(f"Error updating junction: {str(e)}")
+            return None
+
+    async def delete_junction(self, junction_id: int) -> bool:
+        """Delete a junction"""
+        try:
+            self._get_supabase().table("traffic_junctions").delete().eq("id", junction_id).execute()
+            return True
+        except Exception as e:
+            self.logger.error(f"Error deleting junction: {str(e)}")
+            return False
+
+    # =========================================================================
     # JUNCTION ACCESS MANAGEMENT
     # =========================================================================
 
@@ -111,6 +214,29 @@ class UserManagementService:
             )
             return None
 
+    async def get_user_junctions_with_access_levels(self, user_id: int) -> Optional[Dict[str, Any]]:
+        """Get all junctions a user has access to with their access levels"""
+        try:
+            result = (
+                self._get_supabase()
+                .table("user_junctions")
+                .select("*")
+                .eq("user_id", user_id)
+                .execute()
+            )
+            if result.data is None:
+                return None
+            junction_ids  = [r["junction_id"] for r in result.data]
+            access_levels = {r["junction_id"]: r["access_level"] for r in result.data}
+            return {
+                "user_id":       user_id,
+                "junctions":     junction_ids,
+                "access_levels": access_levels,
+            }
+        except Exception as e:
+            self.logger.error(f"Error fetching user junctions with access levels: {str(e)}")
+            return None
+
     async def grant_junction_access(
         self,
         user_id: int,
@@ -118,44 +244,24 @@ class UserManagementService:
         access_level: str,
         granted_by_user_id: int,
     ) -> bool:
-        """
-        Grant a user access to a junction
-        
-        Args:
-            user_id: User to grant access to
-            junction_id: Junction to grant access to
-            access_level: "OPERATOR" or "OBSERVER"
-            granted_by_user_id: Admin user granting the access
-            
-        Returns:
-            bool: True if successful
-        """
+        """Grant a user access to a junction"""
         try:
-            # Check if access already exists
             existing = self.get_user_junction_access(user_id, junction_id)
-            
             if existing:
-                # Update existing access
                 self._get_supabase().table("user_junctions").update(
                     {"access_level": access_level}
                 ).eq("user_id", user_id).eq("junction_id", junction_id).execute()
-                self.logger.info(
-                    f"Updated junction access for user {user_id} to junction {junction_id}: {access_level}"
-                )
+                self.logger.info(f"Updated junction access for user {user_id} to junction {junction_id}: {access_level}")
             else:
-                # Create new access
                 access_data = {
-                    "user_id": user_id,
-                    "junction_id": junction_id,
+                    "user_id":      user_id,
+                    "junction_id":  junction_id,
                     "access_level": access_level,
-                    "granted_by": granted_by_user_id,
+                    "granted_by":   granted_by_user_id,
                 }
                 self._get_supabase().table("user_junctions").insert(access_data).execute()
-                self.logger.info(
-                    f"Granted junction access for user {user_id} to junction {junction_id}: {access_level}"
-                )
+                self.logger.info(f"Granted junction access for user {user_id} to junction {junction_id}: {access_level}")
 
-            # Log audit
             await self.log_audit(
                 user_id=granted_by_user_id,
                 junction_id=junction_id,
@@ -163,11 +269,29 @@ class UserManagementService:
                 resource=f"user_{user_id}",
                 details={"access_level": access_level},
             )
-
             return True
         except Exception as e:
             self.logger.error(f"Error granting junction access: {str(e)}")
             return False
+
+    async def grant_bulk_junction_access(
+        self,
+        user_id: int,
+        junction_ids: List[int],
+        access_level: str,
+        granted_by: int,
+    ) -> List[Dict[str, Any]]:
+        """Grant a user access to multiple junctions"""
+        results = []
+        for junction_id in junction_ids:
+            success = await self.grant_junction_access(
+                user_id=user_id,
+                junction_id=junction_id,
+                access_level=access_level,
+                granted_by_user_id=granted_by,
+            )
+            results.append({"junction_id": junction_id, "success": success})
+        return results
 
     async def revoke_junction_access(
         self,
@@ -175,38 +299,38 @@ class UserManagementService:
         junction_id: int,
         revoked_by_user_id: int,
     ) -> bool:
-        """
-        Revoke a user's access to a junction
-        
-        Args:
-            user_id: User to revoke access from
-            junction_id: Junction to revoke access from
-            revoked_by_user_id: Admin user revoking the access
-            
-        Returns:
-            bool: True if successful
-        """
+        """Revoke a user's access to a junction"""
         try:
             self._get_supabase().table("user_junctions").delete().eq(
                 "user_id", user_id
             ).eq("junction_id", junction_id).execute()
-            
-            self.logger.info(
-                f"Revoked junction access for user {user_id} from junction {junction_id}"
-            )
-
-            # Log audit
+            self.logger.info(f"Revoked junction access for user {user_id} from junction {junction_id}")
             await self.log_audit(
                 user_id=revoked_by_user_id,
                 junction_id=junction_id,
                 action="REVOKE_ACCESS",
                 resource=f"user_{user_id}",
             )
-
             return True
         except Exception as e:
             self.logger.error(f"Error revoking junction access: {str(e)}")
             return False
+
+    async def revoke_bulk_junction_access(
+        self,
+        user_id: int,
+        junction_ids: List[int],
+    ) -> List[Dict[str, Any]]:
+        """Revoke a user's access to multiple junctions"""
+        results = []
+        for junction_id in junction_ids:
+            success = await self.revoke_junction_access(
+                user_id=user_id,
+                junction_id=junction_id,
+                revoked_by_user_id=user_id,
+            )
+            results.append({"junction_id": junction_id, "success": success})
+        return results
 
     async def bulk_grant_access(
         self,
@@ -215,23 +339,13 @@ class UserManagementService:
         access_level: str,
         granted_by_user_id: int,
     ) -> Tuple[int, int]:
-        """
-        Grant a user access to multiple junctions
-        
-        Returns:
-            Tuple[int, int]: (successful_count, failed_count)
-        """
         successful = 0
         failed = 0
-
         for junction_id in junction_ids:
-            if await self.grant_junction_access(
-                user_id, junction_id, access_level, granted_by_user_id
-            ):
+            if await self.grant_junction_access(user_id, junction_id, access_level, granted_by_user_id):
                 successful += 1
             else:
                 failed += 1
-
         return successful, failed
 
     async def bulk_revoke_access(
@@ -240,21 +354,13 @@ class UserManagementService:
         junction_ids: List[int],
         revoked_by_user_id: int,
     ) -> Tuple[int, int]:
-        """
-        Revoke a user's access to multiple junctions
-        
-        Returns:
-            Tuple[int, int]: (successful_count, failed_count)
-        """
         successful = 0
         failed = 0
-
         for junction_id in junction_ids:
             if await self.revoke_junction_access(user_id, junction_id, revoked_by_user_id):
                 successful += 1
             else:
                 failed += 1
-
         return successful, failed
 
     # =========================================================================
@@ -283,7 +389,6 @@ class UserManagementService:
                 return None
 
             user = result.data[0]
-
             print("Stored Hash:", user["password_hash"])
 
             verify = self.verify_password(password, user["password_hash"])
@@ -311,35 +416,26 @@ class UserManagementService:
 
     def create_access_token(self, user_data: Dict[str, Any]) -> str:
         """Create JWT access token with user data and junction access"""
-        expire = datetime.utcnow() + timedelta(
-            minutes=self.access_token_expire_minutes
-        )
-
+        expire = datetime.utcnow() + timedelta(minutes=self.access_token_expire_minutes)
         junction_ids = self.get_user_junctions(user_data["id"])
-
         payload = {
-            "sub": str(user_data["id"]),
-            "username": user_data["username"],
-            "role": user_data["role"],
+            "sub":         str(user_data["id"]),
+            "username":    user_data["username"],
+            "role":        user_data["role"],
             "junction_ids": junction_ids,
-            "exp": expire,
-            "type": "access",
+            "exp":         expire,
+            "type":        "access",
         }
-
         return jwt.encode(payload, self.secret_key, algorithm=self.algorithm)
 
     def create_refresh_token(self, user_data: Dict[str, Any]) -> str:
         """Create JWT refresh token"""
-        expire = datetime.utcnow() + timedelta(
-            days=self.refresh_token_expire_days
-        )
-
+        expire = datetime.utcnow() + timedelta(days=self.refresh_token_expire_days)
         payload = {
-            "sub": str(user_data["id"]),
-            "exp": expire,
+            "sub":  str(user_data["id"]),
+            "exp":  expire,
             "type": "refresh",
         }
-
         return jwt.encode(payload, self.secret_key, algorithm=self.algorithm)
 
     # =========================================================================
@@ -354,17 +450,16 @@ class UserManagementService:
     ) -> Dict[str, Any]:
         """Create a new user session"""
         try:
-            access_token = self.create_access_token(user)
+            access_token  = self.create_access_token(user)
             refresh_token = self.create_refresh_token(user)
             session_token = secrets.token_urlsafe(32)
 
             session_data = {
-                "user_id": user["id"],
+                "user_id":       user["id"],
                 "session_token": session_token,
                 "refresh_token": refresh_token,
                 "expires_at": (
-                    datetime.utcnow()
-                    + timedelta(days=self.refresh_token_expire_days)
+                    datetime.utcnow() + timedelta(days=self.refresh_token_expire_days)
                 ).isoformat(),
                 "ip_address": ip_address,
                 "user_agent": user_agent,
@@ -372,7 +467,6 @@ class UserManagementService:
 
             self._get_supabase().table("user_sessions").insert(session_data).execute()
 
-            # Log audit
             await self.log_audit(
                 user_id=user["id"],
                 action="LOGIN",
@@ -381,16 +475,16 @@ class UserManagementService:
             )
 
             return {
-                "access_token": access_token,
+                "access_token":  access_token,
                 "refresh_token": refresh_token,
                 "session_token": session_token,
-                "token_type": "bearer",
-                "expires_in": self.access_token_expire_minutes * 60,
+                "token_type":    "bearer",
+                "expires_in":    self.access_token_expire_minutes * 60,
                 "user": {
-                    "id": user["id"],
-                    "username": user["username"],
+                    "id":        user["id"],
+                    "username":  user["username"],
                     "full_name": user["full_name"],
-                    "role": user["role"],
+                    "role":      user["role"],
                 },
             }
         except Exception as e:
@@ -404,14 +498,10 @@ class UserManagementService:
     async def verify_token(self, token: str) -> Optional[Dict[str, Any]]:
         """Verify JWT token and return user data"""
         try:
-            payload = jwt.decode(
-                token, self.secret_key, algorithms=[self.algorithm]
-            )
-
+            payload = jwt.decode(token, self.secret_key, algorithms=[self.algorithm])
             user_id = payload.get("sub")
             if not user_id:
                 return None
-
             result = (
                 self._get_supabase()
                 .table("users")
@@ -420,14 +510,11 @@ class UserManagementService:
                 .eq("is_active", True)
                 .execute()
             )
-
             if not result.data:
                 return None
-
             user = result.data[0]
             user["token_data"] = payload
             return user
-
         except JWTError:
             return None
         except Exception as e:
@@ -438,20 +525,13 @@ class UserManagementService:
     # TOKEN REFRESH
     # =========================================================================
 
-    async def refresh_access_token(
-        self, refresh_token: str
-    ) -> Optional[Dict[str, Any]]:
+    async def refresh_access_token(self, refresh_token: str) -> Optional[Dict[str, Any]]:
         """Refresh access token using refresh token"""
         try:
-            payload = jwt.decode(
-                refresh_token, self.secret_key, algorithms=[self.algorithm]
-            )
-
+            payload = jwt.decode(refresh_token, self.secret_key, algorithms=[self.algorithm])
             if payload.get("type") != "refresh":
                 return None
-
             user_id = payload.get("sub")
-
             session = (
                 self._get_supabase()
                 .table("user_sessions")
@@ -461,10 +541,8 @@ class UserManagementService:
                 .gte("expires_at", datetime.utcnow().isoformat())
                 .execute()
             )
-
             if not session.data:
                 return None
-
             user = (
                 self._get_supabase()
                 .table("users")
@@ -473,19 +551,15 @@ class UserManagementService:
                 .eq("is_active", True)
                 .execute()
             ).data[0]
-
             new_access_token = self.create_access_token(user)
-
             self._get_supabase().table("user_sessions").update(
                 {"last_used": datetime.utcnow().isoformat()}
             ).eq("refresh_token", refresh_token).execute()
-
             return {
                 "access_token": new_access_token,
-                "token_type": "bearer",
-                "expires_in": self.access_token_expire_minutes * 60,
+                "token_type":   "bearer",
+                "expires_in":   self.access_token_expire_minutes * 60,
             }
-
         except Exception:
             return None
 
@@ -499,14 +573,7 @@ class UserManagementService:
             self._get_supabase().table("user_sessions").delete().eq(
                 "session_token", session_token
             ).execute()
-
-            # Log audit
-            await self.log_audit(
-                user_id=user_id,
-                action="LOGOUT",
-                resource="session",
-            )
-
+            await self.log_audit(user_id=user_id, action="LOGOUT", resource="session")
             return True
         except Exception as e:
             self.logger.error(f"Error logging out: {str(e)}")
@@ -524,42 +591,25 @@ class UserManagementService:
         role: str,
         email: Optional[str] = None,
     ) -> Optional[Dict[str, Any]]:
-        """
-        Create a new user (admin only)
-        
-        Args:
-            username: Unique username
-            password: User's password (hashed)
-            full_name: User's full name
-            role: "ADMIN", "OPERATOR", or "OBSERVER"
-            email: Optional email address
-            
-        Returns:
-            Dict with user data if successful
-        """
+        """Create a new user (admin only)"""
         if role not in ["ADMIN", "OPERATOR", "OBSERVER"]:
             raise ValueError("Invalid role")
 
         password_hash = self.hash_password(password)
-
         user_data = {
-            "username": username,
+            "username":      username,
             "password_hash": password_hash,
-            "full_name": full_name,
-            "role": role,
-            "email": email,
-            "is_active": True,
+            "full_name":     full_name,
+            "role":          role,
+            "email":         email,
+            "is_active":     True,
         }
-
         try:
             result = self._get_supabase().table("users").insert(user_data).execute()
-
             if not result.data:
                 return None
-
             user = result.data[0]
             user.pop("password_hash", None)
-            
             self.logger.info(f"Created user: {username} with role {role}")
             return user
         except Exception as e:
@@ -577,28 +627,19 @@ class UserManagementService:
         """Update user details"""
         try:
             update_data = {}
-            if full_name is not None:
-                update_data["full_name"] = full_name
-            if email is not None:
-                update_data["email"] = email
-            if is_active is not None:
-                update_data["is_active"] = is_active
+            if full_name is not None: update_data["full_name"] = full_name
+            if email     is not None: update_data["email"]     = email
+            if is_active is not None: update_data["is_active"] = is_active
             if role is not None and role in ["ADMIN", "OPERATOR", "OBSERVER"]:
                 update_data["role"] = role
-
             if not update_data:
                 return None
-
-            result = self._get_supabase().table("users").update(update_data).eq(
-                "id", user_id
-            ).execute()
-
+            result = self._get_supabase().table("users").update(update_data).eq("id", user_id).execute()
             if result.data:
                 user = result.data[0]
                 user.pop("password_hash", None)
                 self.logger.info(f"Updated user {user_id}")
                 return user
-
             return None
         except Exception as e:
             self.logger.error(f"Error updating user: {str(e)}")
@@ -611,7 +652,6 @@ class UserManagementService:
             self._get_supabase().table("users").update(
                 {"password_hash": password_hash}
             ).eq("id", user_id).execute()
-
             self.logger.info(f"Password changed for user {user_id}")
             return True
         except Exception as e:
@@ -624,7 +664,6 @@ class UserManagementService:
             self._get_supabase().table("users").update(
                 {"is_active": False}
             ).eq("id", user_id).execute()
-
             self.logger.info(f"Deactivated user {user_id}")
             return True
         except Exception as e:
@@ -641,12 +680,10 @@ class UserManagementService:
                 .eq("id", user_id)
                 .execute()
             )
-
             if result.data:
                 user = result.data[0]
                 user.pop("password_hash", None)
                 return user
-
             return None
         except Exception as e:
             self.logger.error(f"Error fetching user: {str(e)}")
@@ -657,14 +694,8 @@ class UserManagementService:
     ) -> Tuple[List[Dict[str, Any]], int]:
         """List all users with pagination"""
         try:
-            # Get total count
-            count_result = self._get_supabase().table("users").select(
-                "id", count="exact"
-            ).execute()
-
+            count_result = self._get_supabase().table("users").select("id", count="exact").execute()
             total = count_result.count or 0
-
-            # Get paginated results
             result = (
                 self._get_supabase()
                 .table("users")
@@ -673,12 +704,10 @@ class UserManagementService:
                 .range(offset, offset + limit - 1)
                 .execute()
             )
-
             users = []
             for user in result.data:
                 user.pop("password_hash", None)
                 users.append(user)
-
             return users, total
         except Exception as e:
             self.logger.error(f"Error listing users: {str(e)}")
@@ -700,14 +729,13 @@ class UserManagementService:
         """Log user action for audit purposes"""
         try:
             audit_data = {
-                "user_id": user_id,
+                "user_id":     user_id,
                 "junction_id": junction_id,
-                "action": action,
-                "resource": resource,
-                "details": details,
-                "ip_address": ip_address,
+                "action":      action,
+                "resource":    resource,
+                "details":     details,
+                "ip_address":  ip_address,
             }
-
             self._get_supabase().table("user_audit_logs").insert(audit_data).execute()
             return True
         except Exception as e:

@@ -26,7 +26,11 @@ from app.services.user_management_service import UserManagementService
 
 
 router = APIRouter(prefix="/api/v1/users", tags=["users"])
-logger = logging.getLogger(__name__)
+
+# FIX: lazy logger to avoid NameError caused by circular imports at module load time
+def get_logger():
+    return logging.getLogger(__name__)
+
 
 def get_user_service():
     return UserManagementService()
@@ -54,7 +58,7 @@ async def login(
         )
 
         if not user:
-            logger.warning(f"Failed login attempt for user: {credentials.username}")
+            get_logger().warning(f"Failed login attempt for user: {credentials.username}")
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Invalid username or password",
@@ -93,7 +97,7 @@ async def login(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Login error: {str(e)}")
+        get_logger().error(f"Login error: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Login failed",
@@ -123,7 +127,7 @@ async def refresh_token(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Token refresh error: {str(e)}")
+        get_logger().error(f"Token refresh error: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Token refresh failed",
@@ -149,7 +153,7 @@ async def logout(
         return {"message": "Successfully logged out"}
 
     except Exception as e:
-        logger.error(f"Logout error: {str(e)}")
+        get_logger().error(f"Logout error: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Logout failed",
@@ -183,11 +187,8 @@ async def get_current_user_profile(
         return user_data
 
     except Exception as e:
-        logger.error(f"Error fetching user profile: {str(e)}")
+        get_logger().error(f"Error fetching user profile: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to fetch user profile",
         )
-
-
-
