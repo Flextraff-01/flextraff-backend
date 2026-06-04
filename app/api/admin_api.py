@@ -588,8 +588,8 @@ async def get_user(
                 detail="User not found",
             )
 
-        junctions = user_service.get_user_junctions(user_id)
-        user["junctions"] = [{"junction_id": j} for j in junctions]
+        junctions = await user_service.get_user_junction_access_records(user_id)
+        user["junctions"] = junctions
 
         return user
 
