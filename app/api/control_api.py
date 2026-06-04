@@ -188,7 +188,7 @@ async def set_auto_config(
             "lane_3_green_time": config.min_lane_time,
             "lane_4_green_time": config.min_lane_time,
             "total_vehicles_detected": 0,
-            "algorithm_version": "auto-config",
+            "algorithm_version": "v1.0",
             "status": "active",
         }
 
