@@ -27,6 +27,7 @@ from app.services.traffic_calculator import TrafficCalculator
 from app.routers.two_factor_routes import router as two_factor_router
 from app.routers.user_router import router as user_router
 from app.routers.admin_router import router as admin_router
+from app.routers.controls_router import router as controls_router
 
 # Setup logging
 logging.basicConfig(level=logging.INFO)
@@ -43,6 +44,7 @@ app = FastAPI(
 app.include_router(two_factor_router)
 app.include_router(user_router)
 app.include_router(admin_router)
+app.include_router(controls_router)
 mqtt.init_app(app)
 
 # CORS middleware for frontend integration
