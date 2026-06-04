@@ -54,6 +54,7 @@ app.add_middleware(
         "http://localhost:5173",
         "http://127.0.0.1:5173",
         "https://flextraff-admin-panel.vercel.app",
+        "https://flextraff-admin-panel-black.vercel.app",
         # Add your Render URL here once deployed
     ],
     allow_credentials=True,
