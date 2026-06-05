@@ -60,12 +60,11 @@ async def get_junction_config(
             .execute()
         )
 
-        # Get latest auto config from traffic_cycles
+        # ✅ Get auto config from traffic_junctions
         auto = (
-            sb.table("traffic_cycles")
-            .select("id, min_lane_time, max_lane_time, cycle_start_time")
-            .eq("junction_id", junction_id)
-            .order("id", desc=True)
+            sb.table("traffic_junctions")
+            .select("id, min_time, max_time, base_cycle_time, yellow_light_duration")
+            .eq("id", junction_id)
             .limit(1)
             .execute()
         )
@@ -178,21 +177,24 @@ async def set_auto_config(
 
         sb = user_service._get_supabase()
 
-        payload = {
-            "junction_id": junction_id,
-            "min_lane_time": config.min_lane_time,
-            "max_lane_time": config.max_lane_time,
-            "total_cycle_time": config.max_lane_time * 4,
-            "lane_1_green_time": config.min_lane_time,
-            "lane_2_green_time": config.min_lane_time,
-            "lane_3_green_time": config.min_lane_time,
-            "lane_4_green_time": config.min_lane_time,
-            "total_vehicles_detected": 0,
-            "algorithm_version": "v1.0",
-            "status": "active",
-        }
+        result = (
+            sb.table("traffic_junctions")
+            .update(
+                {
+                    "min_time": config.min_lane_time,
+                    "max_time": config.max_lane_time,
+                    "updated_at": datetime.utcnow().isoformat(),
+                }
+            )
+            .eq("id", junction_id)
+            .execute()
+        )
 
-        sb.table("traffic_cycles").insert(payload).execute()
+        if not result.data:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Junction not found",
+            )
 
         # Disable manual mode if it was active
         existing_manual = (
