@@ -7,82 +7,14 @@ import logging
 from typing import List, Optional
 
 from fastapi import Depends, HTTPException, status
-from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from app.middleware.auth_middleware import (
+    get_current_user,
+    get_optional_user,
+    require_admin,
+    require_operator_or_admin,
+)
 
-from app.services.custom_auth_service import CustomAuthService
-
-security = HTTPBearer()
 logger = logging.getLogger(__name__)
-
-# Lazy initialization of auth_service singleton
-_auth_service = None
-
-def get_auth_service() -> CustomAuthService:
-    """Get or initialize the auth service singleton"""
-    global _auth_service
-    if _auth_service is None:
-        _auth_service = CustomAuthService()
-    return _auth_service
-
-
-async def get_current_user(
-    credentials: HTTPAuthorizationCredentials = Depends(security),
-) -> dict:
-    """Get current authenticated user from JWT token"""
-    try:
-        token = credentials.credentials
-        auth_service = get_auth_service()
-        user_data = await auth_service.verify_token(token)
-
-        if not user_data:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid or expired token",
-            )
-
-        return user_data
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Authentication middleware error: {str(e)}")
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED, detail="Authentication failed"
-        )
-
-
-async def get_optional_user(
-    credentials: Optional[HTTPAuthorizationCredentials] = Depends(security),
-) -> Optional[dict]:
-    """Optional authentication for public endpoints"""
-    if not credentials:
-        return None
-
-    try:
-        return await get_current_user(credentials)
-    except HTTPException:
-        return None
-
-
-# This function can be used to delete junction ids or update info only by the admins and will give error to regular users.
-async def require_admin(user: dict = Depends(get_current_user)) -> dict:
-    """Require ADMIN role"""
-    if user.get("role") != "ADMIN":
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Admin access required",
-        )
-    return user
-
-
-async def require_operator_or_admin(user: dict = Depends(get_current_user)) -> dict:
-    """Require OPERATOR or ADMIN role"""
-    role = user.get("role")
-    if role not in ["ADMIN", "OPERATOR"]:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Operator or admin access required",
-        )
-    return user
 
 
 async def check_junction_access(
@@ -137,7 +69,7 @@ async def filter_user_junctions(
         List[int]: List of junction IDs user can access
     """
     # ADMIN has access to all junctions - return empty list to indicate all
-    if user.get("role") == "ADMIN":
+    if user.get("role", "").lower() == "admin":
         return []
 
     return user.get("token_data", {}).get("junction_ids", [])
