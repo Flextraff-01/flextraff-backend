@@ -3,8 +3,11 @@ import json
 import httpx
 import asyncio
 import logging
+
 # existing imports...
-from app.websocket.ws_broadcast import manager  # import the manager to broadcast messages
+from app.websocket.ws_broadcast import (
+    manager,
+)  # import the manager to broadcast messages
 from app.services.database_service import DatabaseService
 
 logger = logging.getLogger(__name__)
@@ -12,10 +15,7 @@ db_service = DatabaseService()
 
 # --- MQTT Configuration ---
 mqtt_config = MQTTConfig(
-    host="broker.hivemq.com",
-    port=1883,
-    keepalive=60,
-    version=4  # MQTT v3.1.1
+    host="broker.hivemq.com", port=1883, keepalive=60, version=4  # MQTT v3.1.1
 )
 mqtt = FastMQTT(config=mqtt_config)
 
@@ -26,7 +26,7 @@ def connect(client, flags, rc, properties):
     print("=" * 60)
     print("✅ MQTT CONNECTED to broker.hivemq.com")
     print("=" * 60)
-    
+
     # Subscribe to the car counts topic
     mqtt.client.subscribe("flextraff/car_counts", qos=1)
     print("📡 Subscribed to topic: flextraff/car_counts")
@@ -50,7 +50,7 @@ async def message_handler(client, topic, payload, qos, properties):
     """
     Main message handler - receives car counts from Pi
     and sends back calculated green times
-    
+
     Expected MQTT payload format:
     {
         "lane_counts": [north_count, south_count, east_count, west_count],
@@ -66,11 +66,11 @@ async def message_handler(client, topic, payload, qos, properties):
         # Decode the payload
         data = json.loads(payload.decode())
         print(f"📥 Car count data from Pi: {data}")
-        
+
         lane_counts = data.get("lane_counts", [])
         junction_id = data.get("junction_id", 1)
         cycle_id = data.get("cycle_id")
-        
+
         print(f"🚗 Lane counts: {lane_counts}")
         print(f"🚦 Junction ID: {junction_id}")
         print(f"🔄 Cycle ID: {cycle_id}")
@@ -85,7 +85,7 @@ async def message_handler(client, topic, payload, qos, properties):
                     "east": lane_counts[2] if len(lane_counts) > 2 else 0,
                     "west": lane_counts[3] if len(lane_counts) > 3 else 0,
                 }
-                
+
                 await db_service.log_rfid_scanner_data(
                     junction_id=junction_id,
                     cycle_id=cycle_id,
@@ -101,48 +101,47 @@ async def message_handler(client, topic, payload, qos, properties):
                     junction_id=junction_id,
                 )
 
-        # Calculate timing directly using TrafficCalculator 
+        # Calculate timing directly using TrafficCalculator
         print("\n📊 Calculating green times using TrafficCalculator...")
-        
+
         try:
             # Create calculator instance
             from app.services.traffic_calculator import TrafficCalculator
+
             calculator = TrafficCalculator(db_service=db_service)
-            
+
             # Calculate green times directly
             green_times, cycle_time = await calculator.calculate_green_times(
-                lane_counts, 
-                junction_id=junction_id
+                lane_counts, junction_id=junction_id
             )
-            
+
             print(f"✅ Calculated green times: {green_times}")
             print(f"⏱️  Total cycle time: {cycle_time}s")
-            
+
             # Log the calculation event
             await db_service.log_system_event(
                 message=f"Traffic calculated for lanes {lane_counts}",
                 component="mqtt_handler",
                 junction_id=junction_id,
             )
-            
+
             # Publish green times back to Pi
-            green_times_payload = json.dumps({
-                "green_times": green_times,
-                "cycle_time": cycle_time,
-                "junction_id": junction_id,
-                "cycle_id": cycle_id
-            })
-            
-            mqtt.client.publish(
-                "flextraff/green_times", 
-                green_times_payload,
-                qos=1,
-                retain=False
+            green_times_payload = json.dumps(
+                {
+                    "green_times": green_times,
+                    "cycle_time": cycle_time,
+                    "junction_id": junction_id,
+                    "cycle_id": cycle_id,
+                }
             )
-            
+
+            mqtt.client.publish(
+                "flextraff/green_times", green_times_payload, qos=1, retain=False
+            )
+
             print(f"📡 Published green times to Pi on topic: flextraff/green_times")
             print(f"✅ MQTT message processing complete\n")
-            
+
         except Exception as e:
             error_msg = f"Traffic calculation error: {type(e).__name__}: {e}"
             print(f"❌ {error_msg}")
@@ -166,6 +165,7 @@ async def message_handler(client, topic, payload, qos, properties):
         error_msg = f"MQTT message handler error: {type(e).__name__}: {e}"
         print(f"❌ {error_msg}")
         import traceback
+
         traceback.print_exc()
         await db_service.log_system_error(
             error_message=str(e),
@@ -175,4 +175,4 @@ async def message_handler(client, topic, payload, qos, properties):
 
 
 # Export the mqtt instance
-__all__ = ['mqtt']
+__all__ = ["mqtt"]
