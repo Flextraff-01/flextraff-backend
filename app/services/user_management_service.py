@@ -12,7 +12,7 @@ from jose import JWTError, jwt
 from passlib.context import CryptContext
 from supabase import Client, create_client
 
-from app.config import settings
+from config import settings
 
 
 class UserManagementService:
@@ -236,6 +236,36 @@ class UserManagementService:
         except Exception as e:
             self.logger.error(f"Error fetching user junctions with access levels: {str(e)}")
             return None
+
+    async def get_user_junction_access_records(self, user_id: int):
+        """Get full junction access records for a user"""
+        try:
+            result = (
+                self._get_supabase()
+                .table("user_junctions")
+                .select("*")
+                .eq("user_id", user_id)
+                .execute()
+            )
+
+            return result.data or []
+
+        except Exception as e:
+            self.logger.error(
+                f"Error fetching junction access records for user {user_id}: {str(e)}"
+            )
+            return []    
+        
+    # async def get_user_junction_access_records(self, user_id: int):
+    #     result = (
+    #         self._get_supabase()
+    #         .table("user_junctions")
+    #         .select("*")
+    #         .eq("user_id", user_id)
+    #         .execute()
+    #         )
+
+    # return result.data or []
 
     async def grant_junction_access(
         self,

@@ -34,6 +34,7 @@ class Settings:
     # CORS Configuration
     CORS_ORIGINS: list = [
         "https://flextraff-admin-panel.vercel.app",
+        "https://flextraff-admin-panel-black.vercel.app",
         # "http://localhost:3000",
         # "http://localhost:8001",
         # "http://localhost:8000",

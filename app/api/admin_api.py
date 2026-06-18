@@ -586,14 +586,8 @@ async def get_user(
                 detail="User not found",
             )
 
-        junction_records = (
-            user_service._get_supabase()
-            .table("user_junctions")
-            .select("*")
-            .eq("user_id", user_id)
-            .execute()
-        )
-        user["junctions"] = junction_records.data or []
+        junctions = user_service.get_user_junctions(user_id)
+        user["junctions"] = [{"junction_id": j} for j in junctions]
 
         return user
 

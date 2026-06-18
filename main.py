@@ -10,9 +10,9 @@ import asyncio
 import logging
 from datetime import date, datetime
 from typing import Any, Dict, List, Optional
-from mqtt_handler import mqtt
+from app.services.mqtt_handler import mqtt
 from fastapi import WebSocket, WebSocketDisconnect
-from ws_broadcast import manager  # relative import depending on location
+from app.websocket.ws_broadcast import manager  # relative import depending on location
 
 
 
@@ -23,11 +23,11 @@ from pydantic import BaseModel, Field, field_validator
 
 from app.services.database_service import DatabaseService
 from app.services.traffic_calculator import TrafficCalculator
+from app.services.mqtt_handler import watchdog, conductor
 
 from app.routers.two_factor_routes import router as two_factor_router
 from app.routers.user_router import router as user_router
 from app.routers.admin_router import router as admin_router
-from app.routers.controls_router import router as controls_router
 
 # Setup logging
 logging.basicConfig(level=logging.INFO)
@@ -56,6 +56,7 @@ app.add_middleware(
         "http://localhost:5173",
         "http://127.0.0.1:5173",
         "https://flextraff-admin-panel.vercel.app",
+        "https://flextraff-admin-panel-black.vercel.app",
         # Add your Render URL here once deployed
     ],
     allow_credentials=True,
@@ -121,10 +122,14 @@ async def startup_event():
     
     try:
         # Force re-subscribe to ensure we're listening
-        mqtt.client.subscribe("flextraff/car_counts", qos=1)
+        mqtt.client.subscribe("flextraff/+/+/car_count", qos=1)
         print("✅ MQTT subscription confirmed")
         print("🎧 Ready to receive car count data from Raspberry Pi")
         print("=" * 60 + "\n")
+        
+        asyncio.create_task(watchdog())
+        asyncio.create_task(conductor())
+        print("✅ Watchdog and Conductor started")
         
         await _db_service.log_system_event(
             message="MQTT subscription active and listening for car count data",

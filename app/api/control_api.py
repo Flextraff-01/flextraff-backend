@@ -60,12 +60,11 @@ async def get_junction_config(
             .execute()
         )
 
-        # Get latest auto config from traffic_cycles
+        # ✅ Get auto config from traffic_junctions
         auto = (
-            sb.table("traffic_cycles")
-            .select("id, min_lane_time, max_lane_time, cycle_start_time")
-            .eq("junction_id", junction_id)
-            .order("id", desc=True)
+            sb.table("traffic_junctions")
+            .select("id, min_time, max_time, base_cycle_time, yellow_light_duration")
+            .eq("id", junction_id)
             .limit(1)
             .execute()
         )
@@ -122,12 +121,10 @@ async def set_manual_config(
         )
 
         if existing.data:
-            # Update existing
             sb.table("manual_signal_configs").update(payload).eq(
                 "junction_id", junction_id
             ).execute()
         else:
-            # Insert new
             sb.table("manual_signal_configs").insert(payload).execute()
 
         await user_service.log_audit(
@@ -140,6 +137,7 @@ async def set_manual_config(
                 "lane_2": config.lane_2_green_time,
                 "lane_3": config.lane_3_green_time,
                 "lane_4": config.lane_4_green_time,
+                "yellow": config.yellow_time,
             },
         )
 
@@ -179,25 +177,26 @@ async def set_auto_config(
 
         sb = user_service._get_supabase()
 
-        # Insert new traffic_cycles row with min/max lane times
-        # Algorithm will pick these up on next calculation
-        payload = {
-            "junction_id": junction_id,
-            "min_lane_time": config.min_lane_time,
-            "max_lane_time": config.max_lane_time,
-            "total_cycle_time": config.max_lane_time * 4,  # rough estimate
-            "lane_1_green_time": config.min_lane_time,
-            "lane_2_green_time": config.min_lane_time,
-            "lane_3_green_time": config.min_lane_time,
-            "lane_4_green_time": config.min_lane_time,
-            "total_vehicles_detected": 0,
-            "algorithm_version": "auto-config",
-            "status": "active",
-        }
+        result = (
+            sb.table("traffic_junctions")
+            .update(
+                {
+                    "min_time": config.min_lane_time,
+                    "max_time": config.max_lane_time,
+                    "updated_at": datetime.utcnow().isoformat(),
+                }
+            )
+            .eq("id", junction_id)
+            .execute()
+        )
 
-        sb.table("traffic_cycles").insert(payload).execute()
+        if not result.data:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Junction not found",
+            )
 
-        # Also disable manual mode if it was set
+        # Disable manual mode if it was active
         existing_manual = (
             sb.table("manual_signal_configs")
             .select("id")
@@ -208,7 +207,11 @@ async def set_auto_config(
 
         if existing_manual.data:
             sb.table("manual_signal_configs").update(
-                {"is_manual_mode": False, "updated_by": admin["id"]}
+                {
+                    "is_manual_mode": False,
+                    "updated_by": admin["id"],
+                    "updated_at": datetime.utcnow().isoformat(),
+                }
             ).eq("junction_id", junction_id).execute()
 
         await user_service.log_audit(
