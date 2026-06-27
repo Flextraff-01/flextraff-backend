@@ -12,6 +12,7 @@ logger = logging.getLogger(__name__)
 # Lazy initialization of auth_service singleton
 _auth_service = None
 
+
 def get_auth_service() -> CustomAuthService:
     """Get or initialize the auth service singleton"""
     global _auth_service
@@ -60,7 +61,7 @@ async def get_optional_user(
 
 def require_admin(current_user: dict = Depends(get_current_user)) -> dict:
     """Require admin role"""
-    if current_user.get("role") != "admin":
+    if current_user.get("role", "").lower() != "admin":
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN, detail="Admin access required"
         )
@@ -69,7 +70,7 @@ def require_admin(current_user: dict = Depends(get_current_user)) -> dict:
 
 def require_operator_or_admin(current_user: dict = Depends(get_current_user)) -> dict:
     """Require operator or admin role"""
-    if current_user.get("role") not in ["admin", "operator"]:
+    if current_user.get("role", "").lower() not in ["admin", "operator"]:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Operator or admin access required",

@@ -23,10 +23,12 @@ from pydantic import BaseModel, Field, field_validator
 
 from app.services.database_service import DatabaseService
 from app.services.traffic_calculator import TrafficCalculator
+from app.services.mqtt_handler import watchdog, conductor
 
 from app.api.two_factor_api import router as two_factor_router
 from app.api.user_api import router as user_router
 from app.api.admin_api import router as admin_router
+from app.api.control_api import router as controls_router
 
 # Setup logging
 logging.basicConfig(level=logging.INFO)
@@ -43,6 +45,7 @@ app = FastAPI(
 app.include_router(two_factor_router)
 app.include_router(user_router)
 app.include_router(admin_router)
+app.include_router(controls_router)
 mqtt.init_app(app)
 
 # CORS middleware for frontend integration
@@ -120,10 +123,14 @@ async def startup_event():
     
     try:
         # Force re-subscribe to ensure we're listening
-        mqtt.client.subscribe("flextraff/car_counts", qos=1)
+        mqtt.client.subscribe("flextraff/+/+/car_count", qos=1)
         print("✅ MQTT subscription confirmed")
         print("🎧 Ready to receive car count data from Raspberry Pi")
         print("=" * 60 + "\n")
+        
+        asyncio.create_task(watchdog())
+        asyncio.create_task(conductor())
+        print("✅ Watchdog and Conductor started")
         
         await _db_service.log_system_event(
             message="MQTT subscription active and listening for car count data",
