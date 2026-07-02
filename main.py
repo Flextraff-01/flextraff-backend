@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """
 FastAPI application for FlexTraff traffic management system
 Provides REST APIs for traffic calculation, data management
@@ -10,11 +9,9 @@ import asyncio
 import logging
 from datetime import date, datetime
 from typing import Any, Dict, List, Optional
-from app.services.mqtt_handler import mqtt
+from app.services.mqtt_handler import mqtt, watchdog
 from fastapi import WebSocket, WebSocketDisconnect
 from app.websocket.ws_broadcast import manager  # relative import depending on location
-
-
 
 
 from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException
@@ -28,7 +25,6 @@ from app.services.mqtt_handler import watchdog, conductor
 from app.api.two_factor_api import router as two_factor_router
 from app.api.user_api import router as user_router
 from app.api.admin_api import router as admin_router
-from app.api.control_api import router as controls_router
 
 # Setup logging
 logging.basicConfig(level=logging.INFO)
@@ -45,7 +41,6 @@ app = FastAPI(
 app.include_router(two_factor_router)
 app.include_router(user_router)
 app.include_router(admin_router)
-app.include_router(controls_router)
 mqtt.init_app(app)
 
 # CORS middleware for frontend integration
@@ -82,7 +77,7 @@ async def startup_event():
         await _db_service.log_system_event(
             message="FlexTraff backend started successfully",
             log_level="INFO",
-            component="startup"
+            component="startup",
         )
 
         _traffic_calculator = TrafficCalculator(db_service=_db_service)
@@ -96,7 +91,7 @@ async def startup_event():
             await _db_service.log_system_error(
                 error_message=f"Database connection failed: {health.get('error')}",
                 error_type="STARTUP_DB_ERROR",
-                component="startup"
+                component="startup",
             )
 
     except Exception as e:
@@ -107,7 +102,7 @@ async def startup_event():
                 await _db_service.log_system_error(
                     error_message=str(e),
                     error_type="STARTUP_FAILURE",
-                    component="startup"
+                    component="startup",
                 )
         except:
             pass  # If logging fails, don't crash startup
@@ -115,27 +110,28 @@ async def startup_event():
 
     # Wait for MQTT to connect
     await asyncio.sleep(2)
-    
+
     # Ensure subscription is active
     print("\n" + "=" * 60)
     print("🔁 Ensuring MQTT subscription is active...")
     print("=" * 60)
-    
+
     try:
         # Force re-subscribe to ensure we're listening
-        mqtt.client.subscribe("flextraff/+/+/car_count", qos=1)
+        mqtt.client.subscribe("flextraff/+/+/car_counts", qos=1)
         print("✅ MQTT subscription confirmed")
         print("🎧 Ready to receive car count data from Raspberry Pi")
         print("=" * 60 + "\n")
         
+        # ✅ Start background tasks
         asyncio.create_task(watchdog())
         asyncio.create_task(conductor())
         print("✅ Watchdog and Conductor started")
-        
+
         await _db_service.log_system_event(
             message="MQTT subscription active and listening for car count data",
             log_level="INFO",
-            component="mqtt_startup"
+            component="mqtt_startup",
         )
     except Exception as e:
         print(f"⚠️ MQTT subscription warning: {e}")
@@ -143,7 +139,7 @@ async def startup_event():
             await _db_service.log_system_error(
                 error_message=f"MQTT subscription failed: {str(e)}",
                 error_type="MQTT_SUBSCRIPTION_ERROR",
-                component="mqtt_startup"
+                component="mqtt_startup",
             )
         except:
             pass  # If logging fails, don't crash startup
@@ -154,13 +150,13 @@ async def shutdown_event():
     """Handle graceful shutdown and log system closure"""
     # global _db_service
     logger.info("🛑 FlexTraff ATCS API shutting down...")
-    
+
     try:
         if _db_service:
             await _db_service.log_system_event(
                 message="FlexTraff backend shutdown gracefully",
                 log_level="INFO",
-                component="shutdown"
+                component="shutdown",
             )
     except Exception as e:
         logger.error(f"⚠️ Warning during shutdown logging: {e}")
@@ -285,10 +281,10 @@ async def calculate_traffic_timing(
         logger.info(f"📊 Calculating timing for lane counts: {request.lane_counts}")
 
         await calculator.db_service.log_system_event(
-        message=f"Traffic calculated for lanes {request.lane_counts}",
-        component="traffic_calculator",
-        junction_id=request.junction_id,)
-
+            message=f"Traffic calculated for lanes {request.lane_counts}",
+            component="traffic_calculator",
+            junction_id=request.junction_id,
+        )
 
         green_times, cycle_time = await calculator.calculate_green_times(
             request.lane_counts, junction_id=request.junction_id
@@ -320,12 +316,11 @@ async def log_vehicle_detection(
     try:
         # Log vehicle detection in background
         await db.log_vehicle_detection(
-    request.junction_id,
-    request.lane_number,
-    request.fastag_id,
-    request.vehicle_type,
-)
-
+            request.junction_id,
+            request.lane_number,
+            request.fastag_id,
+            request.vehicle_type,
+        )
 
         return {
             "status": "success",
@@ -426,11 +421,10 @@ async def get_live_timing(
         return {
             "junction_id": junction_id,
             "current_lane_counts": lane_counts,
-            "recommended_green_times": green_times, #Probably not needed
+            "recommended_green_times": green_times,  # Probably not needed
             "total_cycle_time": cycle_time,
-            "time_window_minutes": time_window, #Probably not needed
+            "time_window_minutes": time_window,  # Probably not needed
             "algorithm_info": calculator.get_algorithm_info(),
-
             # Need green times later for frontend visual Integration of all lanes with green and red times
         }
 
@@ -441,7 +435,9 @@ async def get_live_timing(
         )
 
 
-@app.get("/junction/{junction_id}/history") #The return values and the values to be inserted in the db seems incorrect
+@app.get(
+    "/junction/{junction_id}/history"
+)  # The return values and the values to be inserted in the db seems incorrect
 async def get_junction_history(
     junction_id: int, limit: int = 10, db: DatabaseService = Depends(get_db_service)
 ):
@@ -530,6 +526,7 @@ async def general_exception_handler(request, exc):
         status_code=500, content={"error": "Internal server error", "status_code": 500}
     )
 
+
 @app.websocket("/ws/logs")
 async def websocket_logs_endpoint(websocket: WebSocket):
     """
@@ -548,7 +545,6 @@ async def websocket_logs_endpoint(websocket: WebSocket):
         manager.disconnect(websocket)
     except Exception:
         manager.disconnect(websocket)
-
 
 
 if __name__ == "__main__":

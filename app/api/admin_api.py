@@ -578,18 +578,16 @@ async def get_user(
     admin: dict = Depends(require_admin),
     user_service: UserManagementService = Depends(get_user_service),
 ) -> dict:
-
     try:
         user = await user_service.get_user_by_id(user_id)
-
         if not user:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="User not found",
             )
 
-        junctions = await user_service.get_user_junction_access_records(user_id)
-        user["junctions"] = junctions
+        junctions = user_service.get_user_junctions(user_id)
+        user["junctions"] = [{"junction_id": j} for j in junctions]
 
         return user
 

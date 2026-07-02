@@ -10,17 +10,9 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 
 from app.middleware.access_control import get_current_user, require_admin
 from app.models.user_models import (
-    AdminBulkAccessGrant,
-    AdminBulkAccessRevoke,
-    ChangePasswordRequest,
-    JunctionAccessCreate,
     LoginRequest,
     TokenRefreshRequest,
-    UserCreate,
     UserDetailedResponse,
-    UserListResponse,
-    UserResponse,
-    UserUpdate,
 )
 from app.services.user_management_service import UserManagementService
 
